@@ -1,0 +1,27 @@
+{
+  "name": "makabl",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Cost-planned, budget-gated AI web app builder (MVP core).",
+  "engines": {
+    "node": ">=23.6"
+  },
+  "scripts": {
+    "test": "node --test \"test/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit",
+    "demo": "node scripts/demo.ts",
+    "db:up": "docker compose up -d --wait",
+    "db:local": "node scripts/pg-local.ts",
+    "db:reset": "node scripts/db-reset.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.23.1",
+    "embedded-postgres": "^17.10.0-beta.17",
+    "typescript": "^5.8.0"
+  },
+  "dependencies": {
+    "pg": "^8.23.1"
+  }
+}
