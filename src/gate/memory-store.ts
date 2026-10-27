@@ -86,15 +86,17 @@ export class MemoryGateStore implements GateStore {
         [...s().reservations.values()].find((r) => r.projectId === p && r.idempotencyKey === key) ?? null,
       getReservation: async (id) => s().reservations.get(id) ?? null,
       insertReservation: async (r) => {
-        const full: Reservation = { ...r, id: `res_${++this.nextId}`, status: 'held', observed: null, result: null };
+        const full: Reservation = {
+          ...r, id: `res_${++this.nextId}`, status: 'held', observed: null, result: null, failed: false,
+        };
         s().reservations.set(full.id, full);
         return { ...full };
       },
       reopenReservation: async (id, worstCase, month) => {
-        Object.assign(res(id), { status: 'held', worstCase, month, observed: null, result: null });
+        Object.assign(res(id), { status: 'held', worstCase, month, observed: null, result: null, failed: false });
       },
-      settleReservation: async (id, observed, result) => {
-        Object.assign(res(id), { status: 'settled', observed, result: result ?? null });
+      settleReservation: async (id, observed, result, failed) => {
+        Object.assign(res(id), { status: 'settled', observed, result: result ?? null, failed });
       },
       releaseReservation: async (id) => { res(id).status = 'released'; },
       insertLedger: async (e) => { s().ledger.push({ ...e }); },

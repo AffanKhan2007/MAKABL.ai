@@ -14,3 +14,5 @@ grant select, insert, update, delete on all tables in schema public to makabl_ap
 grant usage, select on all sequences in schema public to makabl_app;
 -- Append-only tables: triggers already reject update/delete; revoke them too.
 revoke update, delete on activity_events, cost_ledger_entries from makabl_app;
+-- Calibration data is shared across tenants: the app may add runs and read them, never edit.
+revoke update, delete on calibration_runs from makabl_app;

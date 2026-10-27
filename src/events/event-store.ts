@@ -5,7 +5,9 @@
 export type EventType =
   | 'budget_reserved' | 'budget_settled' | 'budget_released' | 'budget_blocked'
   | 'budget_overshoot' | 'approval_requested' | 'approval_decided' | 'idempotent_replay'
-  | 'task_paused' | 'task_resumed';
+  | 'task_paused' | 'task_resumed'
+  | 'task_started' | 'attempt_started' | 'tool_executed' | 'checks_run'
+  | 'task_verified' | 'task_failed' | 'task_refused' | 'calibration_recorded';
 
 export interface ActivityEvent {
   seq: number;

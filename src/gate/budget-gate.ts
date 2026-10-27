@@ -40,6 +40,13 @@ export type AuthorizeResult =
   | { ok: true; replay: true; result: unknown }
   | { ok: false; approval: ApprovalRequest; reason: string };
 
+/**
+ * An earlier call under this idempotency key threw after it was reserved. Whether the
+ * provider charged is unknown (its worst case was booked), and there is no result to
+ * replay, so a retry must use a new key.
+ */
+export class FailedAttemptReplayError extends Error {}
+
 export class BudgetBlockedError extends Error {
   readonly approval: ApprovalRequest;
   constructor(reason: string, approval: ApprovalRequest) {
@@ -86,6 +93,11 @@ export class BudgetGate {
       const month = this.month();
 
       const existing = await tx.findReservation(req.projectId, req.idempotencyKey);
+      if (existing?.status === 'settled' && existing.failed) {
+        throw new FailedAttemptReplayError(
+          `the call under ${req.idempotencyKey} failed earlier and was booked at its worst case; retry with a new key`,
+        );
+      }
       if (existing?.status === 'settled') {
         await emit('idempotent_replay', req.taskId, { idempotencyKey: req.idempotencyKey });
         return { ok: true, replay: true, result: existing.result };
@@ -152,9 +164,16 @@ export class BudgetGate {
     token: BudgetToken, observed: Micros, description: string, result?: unknown,
     basis: CostBasis = 'usage_observed',
   ): Promise<void> {
+    return this.settleInternal(token, observed, description, result, basis, false);
+  }
+
+  private settleInternal(
+    token: BudgetToken, observed: Micros, description: string, result: unknown,
+    basis: CostBasis, failed: boolean,
+  ): Promise<void> {
     return this.store.withProject(token.projectId, async (tx) => {
       await this.heldReservation(tx, token);
-      await tx.settleReservation(token.reservationId, observed, result);
+      await tx.settleReservation(token.reservationId, observed, result, failed);
       await tx.insertLedger({
         projectId: token.projectId, taskId: token.taskId, reservationId: token.reservationId,
         amount: observed, basis, description,
@@ -187,19 +206,21 @@ export class BudgetGate {
    */
   async execute<T>(
     req: PaidCallRequest,
-    call: (token: BudgetToken) => Promise<{ result: T; observed: Micros }>,
+    call: (token: BudgetToken) => Promise<{ result: T; observed: Micros; basis?: CostBasis }>,
   ): Promise<T> {
     const auth = await this.authorize(req);
     if (!auth.ok) throw new BudgetBlockedError(auth.reason, auth.approval);
     if ('replay' in auth) return auth.result as T;
-    let outcome: { result: T; observed: Micros };
+    let outcome: { result: T; observed: Micros; basis?: CostBasis };
     try {
       outcome = await call(auth.token);
     } catch (err) {
-      await this.settle(auth.token, auth.token.worstCase, `${req.description} (failed; charge unknown)`, undefined, 'estimated');
+      await this.settleInternal(
+        auth.token, auth.token.worstCase, `${req.description} (failed; charge unknown)`, undefined, 'estimated', true,
+      );
       throw err;
     }
-    await this.settle(auth.token, outcome.observed, req.description, outcome.result);
+    await this.settle(auth.token, outcome.observed, req.description, outcome.result, outcome.basis);
     return outcome.result;
   }
 

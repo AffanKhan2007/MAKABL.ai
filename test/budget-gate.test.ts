@@ -1,7 +1,7 @@
 import { after, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { usd } from '../src/domain/types.ts';
-import { BudgetBlockedError, type PaidCallRequest } from '../src/gate/budget-gate.ts';
+import { BudgetBlockedError, FailedAttemptReplayError, type PaidCallRequest } from '../src/gate/budget-gate.ts';
 import { memoryEnv, pgEnv, type GateEnv } from './support/envs.ts';
 
 // One behavioural suite, run against every store. The Postgres run needs a database with
@@ -117,6 +117,19 @@ for (const { name, make } of envs) {
       const [entry] = await gate.ledgerFor(P);
       assert.equal(entry?.amount, usd(0.4));
       assert.equal(entry?.basis, 'estimated');
+    });
+
+    test('a key whose call failed cannot replay; a retry must use a new key', async () => {
+      const P = await project();
+      const r = req(P, { idempotencyKey: 'k_failed' });
+      await assert.rejects(gate.execute(r, async () => { throw new Error('reset'); }), /reset/);
+      let called = false;
+      await assert.rejects(
+        gate.execute(r, async () => { called = true; return { result: 1, observed: 0 }; }),
+        FailedAttemptReplayError,
+      );
+      assert.equal(called, false);
+      assert.equal(await gate.execute(req(P, { idempotencyKey: 'k_failed:retry' }), async () => ({ result: 'ok', observed: 0 })), 'ok');
     });
 
     test('approving a budget raise lets the paused task proceed', async () => {

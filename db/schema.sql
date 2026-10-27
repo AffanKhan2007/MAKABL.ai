@@ -195,6 +195,7 @@ create table reservations (
   month            char(7) not null,      -- YYYY-MM the spend counts against
   status           reservation_status not null default 'held',
   result           jsonb,                 -- replayed when a resumed step reuses the key
+  failed           boolean not null default false,  -- call threw: result unknown, never replayed
   created_at       timestamptz not null default now(),
   settled_at       timestamptz,
   unique (project_id, idempotency_key)
@@ -221,6 +222,30 @@ create table cost_ledger_entries (
   description     text not null,
   created_at      timestamptz not null default now()
 );
+
+-- One feature built to completion or abandonment, retries included. The Estimator
+-- calibrates from these. Platform data: token counts and costs only, no project
+-- content, pooled across tenants, so no project_id and no RLS.
+create table calibration_runs (
+  id                     uuid primary key default gen_random_uuid(),
+  feature_type           text not null,
+  model                  text not null,         -- registry id, e.g. anthropic/claude-opus-5-5
+  calls                  int not null check (calls > 0),
+  attempts               int not null check (attempts > 0),
+  input_tokens           bigint not null,
+  output_tokens          bigint not null,
+  cache_write_5m_tokens  bigint not null,
+  cache_write_1h_tokens  bigint not null,
+  cache_read_tokens      bigint not null,
+  cost                   numeric(12,6) not null, -- what the Budget Gate booked
+  currency               char(3) not null,
+  verified               boolean not null,       -- passed its verification gates
+  probe_cost             numeric(12,6),          -- cheap probe run on the same task, if any
+  quoted_low             numeric(12,6),          -- range quoted before the build
+  quoted_high            numeric(12,6),
+  created_at             timestamptz not null default now()
+);
+create index calibration_runs_feature on calibration_runs (feature_type, model);
 
 -- ---------------------------------------------------------------- delivery
 create table environments (
@@ -270,6 +295,8 @@ end $$;
 create trigger activity_events_append_only before update or delete on activity_events
   for each row execute function forbid_mutation();
 create trigger ledger_append_only before update or delete on cost_ledger_entries
+  for each row execute function forbid_mutation();
+create trigger calibration_runs_append_only before update or delete on calibration_runs
   for each row execute function forbid_mutation();
 
 -- Live feed: NOTIFY fires only when the inserting transaction commits.

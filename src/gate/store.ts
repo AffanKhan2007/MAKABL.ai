@@ -22,6 +22,8 @@ export interface Reservation {
   month: string;              // YYYY-MM, for the monthly cap
   observed: Micros | null;
   result: unknown;
+  /** The call threw after its reservation, so its result is unknown and must not replay. */
+  failed: boolean;
 }
 
 export interface LedgerEntry {
@@ -61,10 +63,10 @@ export interface GateTx {
   committed(projectId: string, filter: { taskId?: string; month?: string }): Promise<Micros>;
   findReservation(projectId: string, idempotencyKey: string): Promise<Reservation | null>;
   getReservation(id: string): Promise<Reservation | null>;
-  insertReservation(r: Omit<Reservation, 'id' | 'status' | 'observed' | 'result'>): Promise<Reservation>;
+  insertReservation(r: Omit<Reservation, 'id' | 'status' | 'observed' | 'result' | 'failed'>): Promise<Reservation>;
   /** Reuse a released reservation's key for a fresh attempt. */
   reopenReservation(id: string, worstCase: Micros, month: string): Promise<void>;
-  settleReservation(id: string, observed: Micros, result: unknown): Promise<void>;
+  settleReservation(id: string, observed: Micros, result: unknown, failed: boolean): Promise<void>;
   releaseReservation(id: string): Promise<void>;
   insertLedger(e: LedgerEntry): Promise<void>;
   insertApproval(a: NewApproval): Promise<ApprovalRequest>;

@@ -28,21 +28,28 @@ const features = [
 ] as const;
 
 const plan = estimate(
-  { features: [...features], commercialUse: true, buildModel: MODEL, horizon: 'first_month', unpricedItems: ['Custom domain'] },
-  registry, [], '2026-10-24',
+  {
+    features: [...features], commercialUse: true, buildModel: MODEL, horizon: 'first_month',
+    traffic: { monthlyVisitors: 2_000 }, unpricedItems: ['Custom domain'],
+  },
+  registry, [], new Date().toISOString().slice(0, 10),
 );
 
 console.log('\n=== Cost plan: "inventory tracker for a small shop" (client work) ===');
 console.log(plan.assumptions.map((a) => `  - ${a}`).join('\n'));
 console.log(`  - Calibration runs: ${plan.calibration.runs} (calibrated: ${plan.calibration.calibrated})`);
+const cov = plan.calibration.coverage;
+console.log(`  - Track record: ${cov.share === null
+  ? `not enough data yet (${cov.quotedRuns} quoted builds; need 10)`
+  : `${Math.round(cov.share * 100)}% of ${cov.quotedRuns} builds landed inside their quoted range`}`);
 for (const p of plan.paths) {
   console.log(`\n[${p.path.toUpperCase()} PATH] ${p.eligible ? 'eligible' : 'NOT ELIGIBLE'}  low / expected / high = ${range(p.totals)}`);
   for (const r of p.ineligibleReasons) console.log(`  ! ${r}`);
   for (const l of p.lines) {
     const flag = l.priceIsAssumption ? ' (price unverified)' : '';
-    console.log(`  ${l.label.padEnd(36)} ${range(l.range!).padEnd(26)} ${l.lineClass}/${l.confidence}${flag}`);
+    console.log(`  ${l.label.padEnd(44)} ${range(l.range!).padEnd(26)} ${l.lineClass}/${l.confidence}${flag}`);
   }
-  for (const u of p.unpriced) console.log(`  ${u.label.padEnd(36)} UNPRICED (not in total)`);
+  for (const u of p.unpriced) console.log(`  ${u.label.padEnd(44)} UNPRICED (not in total)`);
   for (const c of p.upgradeCliffs) console.log(`  cliff: ${c}`);
 }
 console.log('\n' + plan.disclosures.map((d) => `  * ${d}`).join('\n'));

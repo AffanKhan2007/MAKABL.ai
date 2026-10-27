@@ -10,8 +10,11 @@ before any paid action. See `docs/working-model-and-requirements.md` (the plan) 
 | Piece | File | State |
 |---|---|---|
 | MVP schema (section 8) | `db/schema.sql`, `db/roles.sql` | Applied and tested on Postgres 17, including row-level security |
-| Pricing registry + seed | `src/registry/` | Seeded; every price `verifiedAt: null`, so all render as assumptions until checked |
-| Estimator (7.2, 7.3) | `src/estimator/estimator.ts` | Reference-class build cost, P10/P50/P90 after 10 runs, commercial-use gate, unpriced bucket |
+| Pricing registry + seed | `src/registry/` | Verified against official pages on 2026-10-27; recheck by 2027-01-27, after which prices show as assumptions. Includes cache write/read rates and Haiku 5.5's long-prompt tier |
+| Estimator (7.2, 7.3) | `src/estimator/estimator.ts` | Build cost from, best first: probe x logged full/probe ratios, P10/P50/P90 of logged runs (10+), or a cached agent-loop prior. Vercel usage from expected traffic. Commercial-use gate, unpriced bucket, published track record |
+| Calibration runs | `src/calibration/runs.ts`, `src/db/pg-run-log.ts` | Every real build's tokens and booked cost, append-only, pooled across tenants |
+| Claude adapter | `src/adapters/claude.ts` | All model calls go through the Budget Gate; counts tokens, reserves the worst case (incl. a refusal fallback), prices each attempt at its own model. Not yet run against the live API |
+| Build loop (P2) | `src/build/` | One agent per feature with file tools on a confined workspace; platform-defined checks; bounded retries by count and cost; pause on budget block and resume by replay; logs a calibration run per feature. Tested only against a scripted fake model |
 | Budget Gate (7.4) | `src/gate/budget-gate.ts` | Reserve then settle, task/project/monthly caps, idempotency keys, approvals |
 | Gate storage | `src/gate/store.ts` | `MemoryGateStore` (tests, demo) and `PgGateStore` (one transaction + advisory lock per project) |
 | Event log | `src/events/event-store.ts`, `src/db/pg-event-log.ts` | Append-only; Postgres feed via LISTEN/NOTIFY, fired on commit only |
@@ -46,10 +49,12 @@ calls; nothing is sent to a provider.
 
 ## Next
 
-1. **[VERIFY] the seed prices** against the official pages and set `verifiedAt`.
-2. Add cache read/write rates to `PriceEntry` (see the TODO in `src/gate/llm-cost.ts`).
+1. Real sandbox for checks (container with no network or secrets, CPU/memory limits); the
+   current workspace runs checks as local processes and is for development only.
+2. Persist the tool log in Postgres so a build can resume after a process restart.
+3. Calibration: 10+ real runs per feature type (with probes) so estimates stop using priors.
 3. Next.js app: intake, cost plan screen, approval queue, SSE feed.
-4. Real LLM adapter whose `execute()` requires a `BudgetToken`.
-5. RLS for the child tables listed above; record `decided_by` on approvals.
+4. RLS for the child tables listed above; record `decided_by` on approvals.
+4. Check Supabase and GitHub commercial-use terms (only Vercel's were verified).
 
 P0 (8 to 10 user interviews, with a commitment ask) is still open and is not a code task.

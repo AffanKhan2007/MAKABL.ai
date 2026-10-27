@@ -24,7 +24,7 @@ type Q = Pick<pg.PoolClient, 'query'>;
 interface ReservationRow {
   id: string; project_id: string; task_id: string; idempotency_key: string;
   worst_case: string; observed: string | null; status: Reservation['status'];
-  month: string; result: unknown;
+  month: string; result: unknown; failed: boolean;
 }
 
 interface ApprovalRow {
@@ -54,6 +54,7 @@ const toReservation = (r: ReservationRow): Reservation => ({
   status: r.status,
   month: r.month,
   result: r.result,
+  failed: r.failed,
 });
 
 const toApproval = (r: ApprovalRow): ApprovalRequest => ({
@@ -145,7 +146,7 @@ export class PgGateStore implements GateStore {
   private tx(c: Q): GateTx {
     const one = async <R extends pg.QueryResultRow>(sql: string, params: unknown[]) =>
       (await c.query<R>(sql, params)).rows[0] ?? null;
-    const resCols = 'id, project_id, task_id, idempotency_key, worst_case, observed, status, month, result';
+    const resCols = 'id, project_id, task_id, idempotency_key, worst_case, observed, status, month, result, failed';
     const mustUpdate = async (sql: string, params: unknown[], what: string) => {
       const { rowCount } = await c.query(sql, params);
       if (rowCount !== 1) throw new Error(`${what}: expected 1 row, updated ${rowCount}`);
@@ -201,14 +202,14 @@ export class PgGateStore implements GateStore {
 
       reopenReservation: (id, worstCase, month) => mustUpdate(
         `update reservations set status = 'held', worst_case = $2, month = $3,
-                observed = null, result = null, settled_at = null, created_at = now()
+                observed = null, result = null, failed = false, settled_at = null, created_at = now()
           where id = $1 and status = 'released'`,
         [id, toNumeric(worstCase), month], `reopen ${id}`),
 
-      settleReservation: (id, observed, result) => mustUpdate(
-        `update reservations set status = 'settled', observed = $2, result = $3, settled_at = now()
+      settleReservation: (id, observed, result, failed) => mustUpdate(
+        `update reservations set status = 'settled', observed = $2, result = $3, failed = $4, settled_at = now()
           where id = $1 and status = 'held'`,
-        [id, toNumeric(observed), JSON.stringify(result ?? null)], `settle ${id}`),
+        [id, toNumeric(observed), JSON.stringify(result ?? null), failed], `settle ${id}`),
 
       releaseReservation: (id) => mustUpdate(
         `update reservations set status = 'released' where id = $1 and status = 'held'`,
