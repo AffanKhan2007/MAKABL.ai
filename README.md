@@ -23,7 +23,7 @@ Requires Node 23.6+ (runs TypeScript directly, no build step).
 ```bash
 npm install
 npm run db:up       # Postgres 17 in Docker on localhost:5433 (needs Docker Desktop + WSL)
-npm run db:local    # or: the same Postgres 17 without Docker (leave running in its own terminal)
+npm run db:local    # or: the same Postgres 17 without Docker; runs detached until db:local:stop
 npm run db:reset    # drop and re-apply db/schema.sql + db/roles.sql (local hosts only)
 npm test            # gate suite on memory and Postgres, RLS, estimator
 npm run typecheck

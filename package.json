@@ -12,7 +12,9 @@
     "typecheck": "tsc --noEmit",
     "demo": "node scripts/demo.ts",
     "db:up": "docker compose up -d --wait",
-    "db:local": "node scripts/pg-local.ts",
+    "db:local": "node scripts/pg-local.ts start",
+    "db:local:stop": "node scripts/pg-local.ts stop",
+    "db:local:status": "node scripts/pg-local.ts status",
     "db:reset": "node scripts/db-reset.ts"
   },
   "devDependencies": {
