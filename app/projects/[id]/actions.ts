@@ -8,6 +8,7 @@ import { gate, isRunning, startBuild } from '../../../src/server/builds.ts';
 import { db } from '../../../src/server/db.ts';
 import { liveModeStatus } from '../../../src/server/live-mode.ts';
 import { planFor } from '../../../src/server/plan.ts';
+import { purgeProject } from '../../../src/server/purge.ts';
 import { getProject, recordPlanApproval, setBuildMode, setProjectState } from '../../../src/server/projects.ts';
 import { currentUserId, userScope } from '../../../src/server/session.ts';
 
@@ -22,6 +23,19 @@ const back = (id: string, error?: string): never =>
 function dollars(form: FormData, key: string, max: number): number | null {
   const n = Number(String(form.get(key) ?? '').trim());
   return Number.isFinite(n) && n > 0 && n <= max ? usd(n) : null;
+}
+
+/** Delete the project and everything recorded about it (NFR-11), after typed confirmation. */
+export async function deleteProjectAction(projectId: string, form: FormData): Promise<void> {
+  const project = await getProject(projectId);
+  if (!project) return back(projectId, 'Project not found.');
+  if (isRunning(projectId)) return back(projectId, 'Wait for the build to pause or finish before deleting.');
+  if (String(form.get('confirm') ?? '').trim() !== project.name) {
+    return back(projectId, 'Type the project name exactly to confirm deletion.');
+  }
+  await purgeProject(projectId);
+  revalidatePath('/');
+  redirect('/');
 }
 
 export async function approvePlanAction(projectId: string, form: FormData): Promise<void> {

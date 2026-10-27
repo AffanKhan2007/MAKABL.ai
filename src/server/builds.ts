@@ -17,7 +17,9 @@ import { liveModeStatus } from './live-mode.ts';
 import { planFor, registry } from './plan.ts';
 import { getProject, setProjectState, verifiedTasks, type Project } from './projects.ts';
 import { userScope } from './session.ts';
-import { featureSlug, simulatedTransport } from './simulated-model.ts';
+import { recordProjectChecks, runProjectChecks } from './verification.ts';
+import { featureSlug, taskIdFor } from '../spec/acceptance.ts';
+import { simulatedTransport } from './simulated-model.ts';
 
 // Runs a project's build in the background of the server process: one feature after
 // another through the build loop. A budget block pauses it; approving the request
@@ -72,7 +74,8 @@ interface ModeSetup {
   systemPrompt: string;
   maxTokens: number;
   maxTurns: number;
-  acceptance(slug: string, name: string): string[];
+  /** What the build is judged against, from the feature's approved criteria. */
+  acceptance(slug: string, criteria: string[]): string[];
 }
 
 function simulatedSetup(): ModeSetup {
@@ -88,7 +91,7 @@ function simulatedSetup(): ModeSetup {
     systemPrompt: BUILDER_SYSTEM_PROMPT,
     maxTokens: 8_000,
     maxTurns: 8,
-    acceptance: (slug) => [`features/${slug}.ts exports the feature`],
+    acceptance: (slug, criteria) => [`features/${slug}.ts exports the feature`, ...criteria],
   };
 }
 
@@ -101,9 +104,9 @@ function liveSetup(): ModeSetup {
     systemPrompt: `${BUILDER_SYSTEM_PROMPT}\n\n${TEMPLATE_GUIDE}`,
     maxTokens: 16_000,
     maxTurns: 30,
-    acceptance: (_slug, name) => [
-      `The "${name}" feature works as the description says.`,
-      `tests/ contains tests for "${name}" that pass.`,
+    acceptance: (_slug, criteria) => [
+      ...criteria,
+      'Each criterion above that can be checked in code has a passing test in tests/.',
       'The type check and the production build pass.',
     ],
   };
@@ -159,8 +162,9 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
   const paid = plan.paths.find((p) => p.path === 'paid')!;
   const tools = new PgToolLog(db(), projectId, scope);
 
-  for (const [i, feature] of project.spec.features.entries()) {
-    const taskId = `feature-${i + 1}`;
+  for (const feature of project.spec.features) {
+    // Stable per name, type and criteria: unchanged features stay done across spec edits.
+    const taskId = taskIdFor(feature);
     if (done.has(taskId)) continue;
     const slug = featureSlug(feature.name);
     const quoted = paid.lines.find((l) => l.label === `Build: ${feature.name}`)?.range;
@@ -172,7 +176,7 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
     const out = await builder.build({
       projectId, taskId, featureType: feature.type, featureName: feature.name,
       spec: `${project.spec.idea}\n\nBuild the "${feature.name}" feature.`,
-      acceptance: mode.acceptance(slug, feature.name),
+      acceptance: mode.acceptance(slug, feature.acceptance),
       model: project.spec.buildModel,
       taskCeiling: budget.projectCap,
       retryLimit: 2,
@@ -187,6 +191,14 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
       return;
     }
   }
-  // Every feature passed its checks. Integration checks and preview deploy come next.
-  await setProjectState(projectId, 'verifying', userId);
+  // Every feature passed its own checks; now the whole-project checks (G4).
+  const checks = await runProjectChecks(project, workspace);
+  await recordProjectChecks(projectId, checks, scope);
+  const passed = checks.every((c) => c.passed);
+  await events.append({
+    projectId, taskId: null, type: 'project_checks_run',
+    payload: { passed, results: checks.map((c) => ({ name: c.name, passed: c.passed })) },
+  });
+  // Preview and production deploys are not built yet; 'verifying' is as far as it goes.
+  await setProjectState(projectId, passed ? 'verifying' : 'paused', userId);
 }

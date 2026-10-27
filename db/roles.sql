@@ -16,3 +16,7 @@ grant usage, select on all sequences in schema public to makabl_app;
 revoke update, delete on activity_events, cost_ledger_entries from makabl_app;
 -- Calibration data is shared across tenants: the app may add runs and read them, never edit.
 revoke update, delete on calibration_runs from makabl_app;
+-- Credentials stay with the auth code: no sessions at all, and users without the hash.
+revoke all on sessions from makabl_app;
+revoke all on users from makabl_app;
+grant select (id, email, created_at) on users to makabl_app;

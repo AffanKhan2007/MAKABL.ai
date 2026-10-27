@@ -6,7 +6,17 @@ import { liveModeStatus } from '../../../src/server/live-mode.ts';
 import { BUILD_MODELS, planFor } from '../../../src/server/plan.ts';
 import { getProject } from '../../../src/server/projects.ts';
 import { FEATURE_TYPES, money, range, STATE_LABEL } from '../../format.ts';
-import { approvePlanAction, decideApprovalAction, setBuildModeAction, startBuildAction } from './actions.ts';
+import { diffSpecs } from '../../../src/spec/diff.ts';
+import { getSpecVersion } from '../../../src/server/projects.ts';
+import { userScope } from '../../../src/server/session.ts';
+import { loadReport, type FeatureStatus } from '../../../src/server/verification.ts';
+import {
+  approvePlanAction, decideApprovalAction, deleteProjectAction, setBuildModeAction, startBuildAction,
+} from './actions.ts';
+
+const FEATURE_TONE: Record<FeatureStatus, '' | 'good' | 'warn' | 'bad'> = {
+  'not started': '', building: 'warn', verified: 'good', failed: 'bad', refused: 'bad',
+};
 import { Feed } from './feed.tsx';
 
 export const dynamic = 'force-dynamic';
@@ -114,6 +124,24 @@ export default async function ProjectPage({
   const canBuild = (project.state === 'approved' || project.state === 'paused' || interrupted)
     && approvals.length === 0 && !running && (project.buildMode === 'simulated' || live.available);
   const canChangeMode = !running && ledger.length === 0;
+  const scope = await userScope();
+  const report = await loadReport(project, scope);
+
+  // FR-15: estimate vs actual per feature, from the ledger (system records only).
+  const spentByTask = new Map<string, number>();
+  for (const e of ledger) spentByTask.set(e.taskId, (spentByTask.get(e.taskId) ?? 0) + e.amount);
+  const quotedFor = (name: string) => paid.lines.find((l) => l.label === `Build: ${name}`)?.range ?? null;
+  const remaining = report.features.filter((f) => f.status !== 'verified')
+    .reduce((a, f) => a + (quotedFor(f.name)?.expected ?? 0), 0);
+
+  // FR-29: after a change request, what changed and what it does to the cost.
+  const previousSpec = project.specVersion > 1 && project.state === 'costed'
+    ? await getSpecVersion(id, project.specVersion - 1) : null;
+  const change = previousSpec ? diffSpecs(previousSpec, project.spec) : null;
+  const previousPlan = previousSpec ? await planFor(previousSpec) : null;
+  const previousPaid = previousPlan?.paths.find((p) => p.path === 'paid');
+  const built = new Set(report.features.filter((f) => f.status === 'verified').map((f) => f.name));
+  const anyBuilt = report.features.some((f) => f.status !== 'not started');
 
   return (
     <main>
@@ -128,6 +156,11 @@ export default async function ProjectPage({
         </div>
       </div>
       <p className="sub">{project.spec.idea}</p>
+      <div className="row small" style={{ marginTop: -12, marginBottom: 16 }}>
+        <span className="muted">Spec v{project.specVersion}</span>
+        {!running && <Link href={`/projects/${id}/edit`}>Change the spec</Link>}
+        <a href={`/api/projects/${id}/export`}>Export (zip)</a>
+      </div>
 
       {error && <p className="notice bad" role="alert">{error}</p>}
       {project.buildMode === 'simulated' ? (
@@ -144,20 +177,72 @@ export default async function ProjectPage({
 
       <section className="card">
         <h2>Features</h2>
+        <p className="muted small" style={{ marginTop: -6 }}>Quoted from the paid path; actual from the ledger.</p>
         <div className="table-wrap">
           <table>
-            <thead><tr><th>Feature</th><th>Type</th></tr></thead>
+            <thead><tr><th>Feature</th><th>Status</th><th className="r">Quoted</th><th className="r">Actual</th></tr></thead>
             <tbody>
-              {project.spec.features.map((f) => (
-                <tr key={f.name}>
-                  <td>{f.name}</td>
-                  <td className="muted">{FEATURE_TYPES.find((t) => t.value === f.type)?.label ?? f.type}</td>
-                </tr>
-              ))}
+              {report.features.map((f) => {
+                const q = quotedFor(f.name);
+                const actual = spentByTask.get(f.taskId) ?? 0;
+                const outside = q && actual > 0 && (actual < q.low || actual > q.high);
+                return (
+                  <tr key={f.taskId}>
+                    <td>
+                      {f.name}{' '}
+                      <span className="muted small">
+                        {FEATURE_TYPES.find((t) => t.value === project.spec.features.find((x) => x.name === f.name)?.type)?.label}
+                      </span>
+                      <details>
+                        <summary className="small muted">Acceptance criteria ({f.acceptance.length})</summary>
+                        <ul className="small" style={{ margin: '4px 0 0', paddingLeft: 18 }}>
+                          {f.acceptance.map((a) => <li key={a}>{a}</li>)}
+                        </ul>
+                      </details>
+                    </td>
+                    <td><span className={`badge ${FEATURE_TONE[f.status]}`}>{f.status}</span></td>
+                    <td className="r num">{q ? range(q) : '—'}</td>
+                    <td className="r num">
+                      {actual ? money(actual) : '—'}
+                      {outside && <div className="small" style={{ color: 'var(--warn)' }}>outside range</div>}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
+        {anyBuilt && remaining > 0 && (
+          <p className="muted small" style={{ margin: '8px 0 0' }}>
+            Features not yet verified are expected to cost {money(remaining)} more to build.
+          </p>
+        )}
       </section>
+
+      {change && previousPaid && (
+        <section className="card stack" style={{ borderColor: 'var(--accent)' }}>
+          <h2 style={{ margin: 0 }}>Changes since spec v{project.specVersion - 1}</h2>
+          <ul style={{ margin: 0, paddingLeft: 18 }}>
+            {change.added.map((f) => <li key={`a-${f.name}`}>Added <strong>{f.name}</strong></li>)}
+            {change.removed.map((f) => <li key={`r-${f.name}`}>Removed <strong>{f.name}</strong> (its files stay in the project)</li>)}
+            {change.changed.map((c) => <li key={`c-${c.after.name}`}>Changed <strong>{c.after.name}</strong>: {c.what.join(' and ')}; it will be rebuilt</li>)}
+            {change.settings.length > 0 && <li>Also changed: {change.settings.join(', ')}</li>}
+            {change.unchanged.filter((f) => built.has(f.name)).length > 0 && (
+              <li className="muted">
+                Already built and unchanged, so not rebuilt: {change.unchanged.filter((f) => built.has(f.name)).map((f) => f.name).join(', ')}
+              </li>
+            )}
+          </ul>
+          <div className="row spread">
+            <span className="muted">Paid path, expected</span>
+            <span className="num">
+              {money(previousPaid.totals.expected)} → {money(paid.totals.expected)}{' '}
+              <strong>({paid.totals.expected >= previousPaid.totals.expected ? '+' : '−'}{money(Math.abs(paid.totals.expected - previousPaid.totals.expected))})</strong>
+            </span>
+          </div>
+          <p className="muted small" style={{ margin: 0 }}>Approve the updated plan below to build the changes.</p>
+        </section>
+      )}
 
       <h2 style={{ marginTop: 24 }}>Cost plan</h2>
       <p className="muted small" style={{ marginTop: -6 }}>
@@ -183,7 +268,7 @@ export default async function ProjectPage({
       <div className="grid2" style={{ marginTop: 24 }}>
         <section className="card stack">
           <h2 style={{ margin: 0 }}>Budget</h2>
-          {budget ? (
+          {project.state !== 'costed' && budget ? (
             <>
               <div className="row spread"><span className="muted">Project cap</span><span className="num">{money(budget.projectCap)}</span></div>
               <div className="row spread"><span className="muted">Monthly cap</span><span className="num">{money(budget.monthlyCap)}</span></div>
@@ -202,13 +287,16 @@ export default async function ProjectPage({
               </p>
               <div>
                 <label htmlFor="projectCap">Project cap (USD) <span className="hint">build spend in total</span></label>
-                <input id="projectCap" name="projectCap" type="number" min="0.01" max="10000" step="0.01" defaultValue={suggestedCap} required />
+                <input id="projectCap" name="projectCap" type="number" min="0.01" max="10000" step="0.01"
+                  defaultValue={budget ? budget.projectCap / 1_000_000 : suggestedCap} required />
               </div>
               <div>
                 <label htmlFor="monthlyCap">Monthly cap (USD)</label>
-                <input id="monthlyCap" name="monthlyCap" type="number" min="0.01" max="10000" step="0.01" defaultValue={suggestedCap} required />
+                <input id="monthlyCap" name="monthlyCap" type="number" min="0.01" max="10000" step="0.01"
+                  defaultValue={budget ? budget.monthlyCap / 1_000_000 : suggestedCap} required />
               </div>
-              <button type="submit">Approve plan and set caps</button>
+              {budget && <p className="muted small" style={{ margin: 0 }}>Spent so far: {money(spent)}. The caps include what is already spent.</p>}
+              <button type="submit">{budget ? 'Approve updated plan' : 'Approve plan and set caps'}</button>
             </form>
           )}
         </section>
@@ -227,7 +315,7 @@ export default async function ProjectPage({
           )}
           {project.state === 'verifying' && !running && (
             <p className="notice good" style={{ margin: 0 }}>
-              Every feature passed its checks. Integration checks and the preview deploy are not built yet.
+              Every feature and the whole-project checks passed; see the verification report. Deploying is not built yet.
             </p>
           )}
           {approvals.length > 0 && <p className="notice bad" style={{ margin: 0 }}>Paused: decide the approval below to continue.</p>}
@@ -298,6 +386,49 @@ export default async function ProjectPage({
         </section>
       ))}
 
+      {anyBuilt && (
+        <section className="card stack">
+          <h2 style={{ margin: 0 }}>Verification report</h2>
+          <p className="muted small" style={{ margin: 0 }}>
+            &ldquo;Verified&rdquo; means the checks below passed, nothing more. Who wrote each check&rsquo;s tests is shown.
+          </p>
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Feature</th><th>Check</th><th>Tests by</th><th className="r">Result</th></tr></thead>
+              <tbody>
+                {report.features.flatMap((f) => f.checks.length === 0
+                  ? [<tr key={f.taskId}><td>{f.name}</td><td className="muted" colSpan={3}>Not checked yet</td></tr>]
+                  : f.checks.map((c, i) => (
+                    <tr key={`${f.taskId}-${c.name}`}>
+                      <td>{i === 0 ? f.name : ''}</td>
+                      <td>{c.name} <span className="muted small">{c.gate}</span></td>
+                      <td className="muted">{c.testsAuthoredBy === 'none' ? '—' : c.testsAuthoredBy}</td>
+                      <td className="r"><span className={`badge ${c.passed ? 'good' : 'bad'}`}>{c.passed ? 'pass' : 'fail'}</span></td>
+                    </tr>
+                  )))}
+                {report.projectChecks.map((c) => (
+                  <tr key={c.name}>
+                    <td>Whole project</td>
+                    <td>
+                      {c.name} <span className="muted small">{c.gate}</span>
+                      {!c.passed && <pre className="mono small" style={{ whiteSpace: 'pre-wrap', margin: '4px 0 0' }}>{c.summary}</pre>}
+                    </td>
+                    <td className="muted">platform</td>
+                    <td className="r"><span className={`badge ${c.passed ? 'good' : 'bad'}`}>{c.passed ? 'pass' : 'fail'}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div>
+            <h3>Not checked</h3>
+            <ul className="small" style={{ margin: 0, paddingLeft: 18 }}>
+              {report.notChecked.map((n) => <li key={n}>{n}</li>)}
+            </ul>
+          </div>
+        </section>
+      )}
+
       <Feed projectId={id} />
 
       {ledger.length > 0 && (
@@ -318,6 +449,23 @@ export default async function ProjectPage({
               </tbody>
             </table>
           </div>
+        </section>
+      )}
+
+      {!running && (
+        <section className="card stack" style={{ borderColor: 'var(--bad)' }}>
+          <h2 style={{ margin: 0 }}>Delete project</h2>
+          <p className="muted small" style={{ margin: 0 }}>
+            Permanently deletes the spec, plan, approvals, event log, ledger and code. Export first if you want a copy.
+            Anonymous build costs (token counts and amounts, with no project details) are kept to improve estimates.
+          </p>
+          <form action={deleteProjectAction.bind(null, id)} className="row">
+            <div style={{ minWidth: 220, flex: 1 }}>
+              <label htmlFor="confirm-delete">Type <strong>{project.name}</strong> to confirm</label>
+              <input id="confirm-delete" name="confirm" type="text" autoComplete="off" required />
+            </div>
+            <button type="submit" className="danger">Delete permanently</button>
+          </form>
         </section>
       )}
     </main>

@@ -21,10 +21,22 @@ create type reservation_status as enum ('held', 'settled', 'released');
 
 -- ---------------------------------------------------------------- core
 create table users (
-  id          uuid primary key default gen_random_uuid(),
-  email       text not null unique,
-  created_at  timestamptz not null default now()
+  id             uuid primary key default gen_random_uuid(),
+  email          text not null unique,
+  password_hash  text,                  -- scrypt; null means the account cannot sign in
+  created_at     timestamptz not null default now()
 );
+
+-- Signed-in sessions. The cookie holds a random token; only its SHA-256 is stored, so
+-- a leaked table cannot be replayed as cookies. Read only by the auth code (login role).
+create table sessions (
+  token_hash    text primary key,
+  user_id       uuid not null references users(id) on delete cascade,
+  created_at    timestamptz not null default now(),
+  expires_at    timestamptz not null,
+  last_seen_at  timestamptz not null default now()
+);
+create index sessions_user on sessions (user_id);
 
 create table projects (
   id             uuid primary key default gen_random_uuid(),
@@ -301,8 +313,19 @@ create table secret_refs (
 );
 
 -- ---------------------------------------------------------------- append-only guards
+-- The one exception is deleting a whole project at its owner's request (NFR-11): the
+-- purge transaction sets makabl.purge_project to that project's id, and only rows of
+-- that project may then be deleted. makabl_app has no delete grant on these tables, so
+-- only the login role's purge code can get here.
 create function forbid_mutation() returns trigger language plpgsql as $$
 begin
+  -- Nested, not AND-ed: calibration_runs has no project_id, and SQL does not promise
+  -- to short-circuit, so the column is only read on tables that have it.
+  if tg_op = 'DELETE' and tg_table_name in ('activity_events', 'cost_ledger_entries') then
+    if old.project_id::text = current_setting('makabl.purge_project', true) then
+      return old;
+    end if;
+  end if;
   raise exception '% is append-only', tg_table_name;
 end $$;
 

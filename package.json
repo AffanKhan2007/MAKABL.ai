@@ -19,7 +19,8 @@
     "db:local:stop": "node scripts/pg-local.ts stop",
     "db:local:status": "node scripts/pg-local.ts status",
     "db:reset": "node scripts/db-reset.ts",
-    "db:reset:test": "node scripts/db-reset.ts --test"
+    "db:reset:test": "node scripts/db-reset.ts --test",
+    "db:seed": "node scripts/seed-dev-user.ts"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

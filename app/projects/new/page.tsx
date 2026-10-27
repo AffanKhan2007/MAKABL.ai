@@ -1,13 +1,20 @@
+import { DEFAULT_ACCEPTANCE } from '../../../src/spec/acceptance.ts';
+import { FEATURE_ROWS } from '../../../src/server/intake.ts';
 import { BUILD_MODELS } from '../../../src/server/plan.ts';
-import { FEATURE_ROWS } from '../../format.ts';
+import { requireUser } from '../../../src/server/session.ts';
+import { createProjectAction } from './actions.ts';
 import { IntakeForm } from './intake-form.tsx';
 
-export default function NewProject() {
+export const dynamic = 'force-dynamic';
+
+export default async function NewProject() {
+  await requireUser();
   return (
     <main>
       <h1>New project</h1>
       <p className="sub">Describe the app. You get a ranged cost plan before anything is built or spent.</p>
-      <IntakeForm rows={FEATURE_ROWS} models={BUILD_MODELS} />
+      <IntakeForm action={createProjectAction} rows={FEATURE_ROWS} models={BUILD_MODELS}
+        defaults={DEFAULT_ACCEPTANCE} submitLabel="Get the cost plan" />
     </main>
   );
 }

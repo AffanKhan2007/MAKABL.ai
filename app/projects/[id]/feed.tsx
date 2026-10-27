@@ -19,6 +19,7 @@ interface FeedEvent {
 const REFRESH_ON = new Set([
   'task_paused', 'task_resumed', 'task_verified', 'task_failed', 'task_refused',
   'approval_requested', 'approval_decided', 'budget_settled', 'build_mode_changed',
+  'checks_run', 'project_checks_run',
 ]);
 
 const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
@@ -46,6 +47,8 @@ function describe(e: FeedEvent): string {
     case 'calibration_recorded': return `${task}run recorded: ${money(num(p.cost))} over ${p.calls} calls`;
     case 'workspace_ready': return `project prepared${p.templateWritten ? ' from the starter template' : ''}; dependencies installed in ${p.seconds}s (exit ${p.installExit})`;
     case 'build_mode_changed': return `build mode set to ${p.mode}`;
+    case 'spec_changed': return `spec changed to v${p.toVersion}; plan needs approval again`;
+    case 'project_checks_run': return `whole-project checks ${p.passed ? 'passed' : 'failed'}`;
     default: return `${task}${e.type}`;
   }
 }

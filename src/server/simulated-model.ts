@@ -1,13 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import type { ClaudeMessage, ClaudeTransport } from '../adapters/claude.ts';
+import { featureSlug } from '../spec/acceptance.ts';
 
 // A stand-in for the Claude API so the whole build flow can be seen without spending
 // anything. For each feature it lists files, writes one file, runs the checks and
 // finishes, with token usage shaped like a cached agent loop. Its runs are never
 // written to calibration_runs: fake data must not train the estimator.
 
-export const featureSlug = (name: string): string =>
-  name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'feature';
+export { featureSlug };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 

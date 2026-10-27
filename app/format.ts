@@ -20,9 +20,6 @@ export const STATE_LABEL: Record<string, { text: string; tone: '' | 'good' | 'wa
   live: { text: 'Live', tone: 'good' },
 };
 
-/** Feature rows on the intake form. */
-export const FEATURE_ROWS = 8;
-
 export const FEATURE_TYPES = [
   { value: 'auth', label: 'Sign-in / auth' },
   { value: 'crud_endpoint', label: 'Data API (CRUD)' },

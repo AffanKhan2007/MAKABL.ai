@@ -13,19 +13,27 @@ Requires Node 23.6+. From the project folder:
 npm install
 npm run db:local    # start Postgres 17 (no Docker needed); keeps running until db:local:stop
 npm run db:reset    # create the app's tables (first time only; wipes the app's local data)
-npm run dev         # then open http://localhost:3000
+npm run dev         # then open http://localhost:3000 and create an account
 ```
 
-1. **New project**: describe the app and its features (the form is pre-filled with an example).
+`npm run db:seed` creates a local development account instead (see
+`scripts/seed-dev-user.ts`; local databases only).
+
+1. **New project**: describe the app and its features (pre-filled with an example). Each
+   feature has acceptance criteria: sensible defaults per type, or your own.
 2. **Cost plan**: free vs paid path, each line with its range and confidence.
 3. **Approve**: set the caps. Try a low cap (for example $1) to see the Budget Gate pause the build.
 4. **Start build**: watch the live feed. When the Gate pauses it, approve a raise to resume.
    If the server stops mid-build, the page offers **Resume build**; finished steps replay free.
+5. **Review**: estimate vs actual per feature, and a verification report that lists what
+   was checked, who wrote the tests, and what was not checked.
+6. **Change the spec**: saving creates a new version, shows what changed and the cost
+   difference, and needs approval again. Only changed or new features are rebuilt.
+7. **Export** the project as a zip, or **delete** it with everything recorded about it.
 
 New projects build in **simulated** mode: a scripted stand-in plays the model, so no API
-key is needed, nothing is spent, and simulated runs never feed the cost estimates. There
-is no sign-in yet; everything belongs to one local development user, and every app query
-runs as that user under row-level security.
+key is needed, nothing is spent, and simulated runs never feed the cost estimates. Every
+query for a signed-in user runs under row-level security.
 
 ### Live builds (real Claude, real money)
 
@@ -46,7 +54,8 @@ and never sees it.
 
 | Piece | File | State |
 |---|---|---|
-| Web app | `app/`, `src/server/` | Intake, cost plan, approvals, simulated and live builds, live feed, ledger. Every query runs as `makabl_app` under RLS |
+| Web app | `app/`, `src/server/` | Accounts, intake with acceptance criteria, cost plan, approvals, change requests, simulated and live builds, live feed, estimate vs actual, verification report, export, delete. Every query runs as `makabl_app` under RLS |
+| Accounts | `src/auth/`, `proxy.ts` | Email and password (scrypt), httpOnly session cookie, only the token's hash stored, throttled sign-in |
 | MVP schema (section 8) | `db/schema.sql`, `db/roles.sql` | Postgres 17, RLS on every tenant table including child tables |
 | Pricing registry + seed | `src/registry/` | Verified against official pages on 2026-10-27; recheck by 2027-01-27, after which prices show as assumptions |
 | Estimator (7.2, 7.3) | `src/estimator/estimator.ts` | Probe x logged ratios, P10/P50/P90 of logged runs (10+), or a cached agent-loop prior; Vercel usage from traffic; commercial-use gate; track record |
@@ -78,11 +87,11 @@ estimates must only learn from real builds.
 
 ## Next
 
-1. Sign-in (an auth provider), replacing the single dev user in `src/server/session.ts`.
-2. A real sandbox for generated code (container: no network or secrets, CPU/memory limits).
-3. First live builds, then 10+ runs per feature type so estimates stop using priors.
-4. User-approved acceptance criteria per feature (live builds use generic criteria now).
-5. Integration checks and preview deploy to Vercel (gates G4, G5).
-6. Check Supabase and GitHub commercial-use terms (only Vercel's were verified).
+1. A real sandbox for generated code (container: no network or secrets, CPU/memory limits).
+2. First live builds, then 10+ runs per feature type so estimates stop using priors.
+3. Preview and production deploys to Vercel with approval (gate G5).
+4. Accounts for real users: email verification, password reset, optionally a sign-in
+   provider; a shared rate limit instead of the per-process one.
+5. Check Supabase and GitHub commercial-use terms (only Vercel's were verified).
 
 P0 (8 to 10 user interviews, with a commitment ask) is still open and is not a code task.

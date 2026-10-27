@@ -1,6 +1,7 @@
 import type { FeatureType } from '../calibration/runs.ts';
 import { withTx } from '../db/scope.ts';
 import type { Horizon } from '../domain/types.ts';
+import { DEFAULT_ACCEPTANCE } from '../spec/acceptance.ts';
 import { db } from './db.ts';
 import { userScope } from './session.ts';
 
@@ -11,6 +12,8 @@ import { userScope } from './session.ts';
 export interface SpecFeature {
   type: FeatureType;
   name: string;
+  /** User-approved acceptance criteria (FR-03). */
+  acceptance: string[];
 }
 
 export interface ProjectSpec {
@@ -62,9 +65,17 @@ interface ProjectRow {
   created_at: Date; version: number; spec: ProjectSpec;
 }
 
+/** Specs saved before acceptance criteria existed get their type's defaults. */
+export function normalizeSpec(spec: ProjectSpec): ProjectSpec {
+  return {
+    ...spec,
+    features: spec.features.map((f) => ({ ...f, acceptance: f.acceptance?.length ? f.acceptance : [...DEFAULT_ACCEPTANCE[f.type]] })),
+  };
+}
+
 const toProject = (r: ProjectRow): Project => ({
   id: r.id, ownerId: r.owner_id, name: r.name, state: r.state, buildMode: r.build_mode,
-  createdAt: r.created_at.toISOString(), specVersion: r.version, spec: r.spec,
+  createdAt: r.created_at.toISOString(), specVersion: r.version, spec: normalizeSpec(r.spec),
 });
 
 const LATEST = `
@@ -86,6 +97,33 @@ export async function getProject(id: string, userId?: string): Promise<Project |
   return withTx(db(), await userScope(userId), async (c) => {
     const { rows } = await c.query<ProjectRow>(`${LATEST} where p.id = $1`, [id]);
     return rows[0] ? toProject(rows[0]) : null;
+  });
+}
+
+/** A specific saved version of a project's spec, if the user may see it. */
+export async function getSpecVersion(projectId: string, version: number): Promise<ProjectSpec | null> {
+  return withTx(db(), await userScope(), async (c) => {
+    const { rows } = await c.query<{ spec: ProjectSpec }>(
+      'select spec from project_specs where project_id = $1 and version = $2', [projectId, version]);
+    return rows[0] ? normalizeSpec(rows[0].spec) : null;
+  });
+}
+
+/**
+ * Save an edited spec as the next version (rule 1: specs are versioned, never edited in
+ * place) and send the project back for plan approval. Returns the new version number.
+ */
+export async function saveSpecVersion(projectId: string, name: string, spec: ProjectSpec): Promise<number> {
+  return withTx(db(), await userScope(), async (c) => {
+    const { rows } = await c.query<{ v: number }>(
+      `insert into project_specs (project_id, version, spec, created_by)
+       select $1, coalesce(max(version), 0) + 1, $2, 'user' from project_specs where project_id = $1
+       returning version as v`,
+      [projectId, JSON.stringify(spec)]);
+    await c.query(
+      `update projects set name = $2, commercial_use = $3, state = 'costed' where id = $1`,
+      [projectId, name, spec.commercialUse]);
+    return rows[0]!.v;
   });
 }
 
