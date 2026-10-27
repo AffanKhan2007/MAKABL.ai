@@ -64,6 +64,8 @@ export const BUILDER_SYSTEM_PROMPT = [
 ].join('\n');
 
 const MAX_READ_CHARS = 200_000;
+/** Extra tries for one turn's model call after it fails. */
+const CALL_RETRIES = 2;
 
 const TOOLS: Anthropic.Beta.Messages.BetaTool[] = [
   {
@@ -169,30 +171,37 @@ export class FeatureBuilder {
 
       for (let turn = 1; turn <= task.maxTurns; turn++) {
         const step = `${task.taskId}:a${attempt}:t${turn}`;
-        let msg: ClaudeMessage;
-        try {
-          msg = await this.d.adapter.call({
-            projectId: task.projectId,
-            taskId: task.taskId,
-            taskCeiling: task.taskCeiling,
-            idempotencyKey: step,
-            description: `${task.featureName}: attempt ${attempt}, turn ${turn}`,
-            model: task.model,
-            system: this.d.systemPrompt ?? BUILDER_SYSTEM_PROMPT,
-            messages: [...messages],
-            tools: TOOLS,
-            maxTokens: task.maxTokens,
-            ...(task.effort ? { effort: task.effort } : {}),
-            run,
-          });
-        } catch (err) {
-          if (err instanceof BudgetBlockedError) {
-            // Pause, do not kill (7.4): nothing is recorded; calling build() again resumes.
-            return { status: 'paused', attempts: attempt, approval: err.approval, reason: err.message };
+        let msg: ClaudeMessage | undefined;
+        let lastError: unknown;
+        // A failed call (network error, or one cut off by a restart) is already booked at
+        // its worst case and its key cannot replay, so the same turn is retried under a
+        // new key. The sequence of keys is fixed, so a resumed build replays it exactly.
+        for (let retry = 0; retry <= CALL_RETRIES && !msg; retry++) {
+          try {
+            msg = await this.d.adapter.call({
+              projectId: task.projectId,
+              taskId: task.taskId,
+              taskCeiling: task.taskCeiling,
+              idempotencyKey: retry === 0 ? step : `${step}:r${retry}`,
+              description: `${task.featureName}: attempt ${attempt}, turn ${turn}${retry ? ` (retry ${retry})` : ''}`,
+              model: task.model,
+              system: this.d.systemPrompt ?? BUILDER_SYSTEM_PROMPT,
+              messages: [...messages],
+              tools: TOOLS,
+              maxTokens: task.maxTokens,
+              ...(task.effort ? { effort: task.effort } : {}),
+              run,
+            });
+          } catch (err) {
+            if (err instanceof BudgetBlockedError) {
+              // Pause, do not kill (7.4): nothing is recorded; calling build() again resumes.
+              return { status: 'paused', attempts: attempt, approval: err.approval, reason: err.message };
+            }
+            lastError = err;
           }
-          // A failed call is already booked at its worst case. End this attempt; the next
-          // attempt uses new idempotency keys.
-          stopNote = `The model call failed: ${err instanceof Error ? err.message : String(err)}`;
+        }
+        if (!msg) {
+          stopNote = `The model call failed: ${lastError instanceof Error ? lastError.message : String(lastError)}`;
           break;
         }
         // Pass the content back unchanged, thinking blocks included, as the API requires.

@@ -6,7 +6,12 @@ import { MemoryEventLog, type EventLog } from '../../src/events/event-store.ts';
 import { BudgetGate } from '../../src/gate/budget-gate.ts';
 import { MemoryGateStore } from '../../src/gate/memory-store.ts';
 
-export const DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://postgres:makabl@localhost:5433/makabl';
+/**
+ * Tests use their own database, never the app's: they write calibration runs, and the
+ * app's estimates must only ever learn from real builds. Create it with
+ * `npm run db:reset:test`; Postgres tests skip themselves if it is missing.
+ */
+export const DATABASE_URL = process.env.TEST_DATABASE_URL ?? 'postgres://postgres:makabl@localhost:5433/makabl_test';
 export const NOW = () => new Date('2026-10-24T00:00:00Z');
 
 export interface GateEnv {

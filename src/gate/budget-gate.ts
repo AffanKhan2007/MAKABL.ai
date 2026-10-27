@@ -191,6 +191,31 @@ export class BudgetGate {
     });
   }
 
+  /**
+   * After a crash or restart, reservations still held for the project belong to calls
+   * that will never settle. Whether they reached the provider is unknown, so each is
+   * booked at its worst case as 'estimated' and marked failed: its key can no longer
+   * replay, and a retry needs a new one. Call only when no build for the project is
+   * running. Returns how many were settled.
+   */
+  recoverInterrupted(projectId: string): Promise<number> {
+    return this.store.withProject(projectId, async (tx) => {
+      const held = await tx.heldReservations(projectId);
+      const emit = this.emitter(tx, projectId);
+      for (const r of held) {
+        await tx.settleReservation(r.id, r.worstCase, null, true);
+        await tx.insertLedger({
+          projectId, taskId: r.taskId, reservationId: r.id, amount: r.worstCase, basis: 'estimated',
+          description: `${r.idempotencyKey} (interrupted; charge unknown)`,
+        });
+        await emit('budget_settled', r.taskId, {
+          reservationId: r.id, observed: r.worstCase, basis: 'estimated', worstCase: r.worstCase, interrupted: true,
+        });
+      }
+      return held.length;
+    });
+  }
+
   /** The call was never sent, so nothing was charged. */
   release(token: BudgetToken): Promise<void> {
     return this.store.withProject(token.projectId, async (tx) => {
@@ -245,12 +270,15 @@ export class BudgetGate {
   }
 
   /** Decide an approval. Approving a budget raise lifts both caps by `raiseBy`. */
-  decide(projectId: string, approvalId: string, decision: 'approved' | 'declined', raiseBy: Micros = 0): Promise<ApprovalRequest> {
+  decide(
+    projectId: string, approvalId: string, decision: 'approved' | 'declined', raiseBy: Micros = 0,
+    decidedBy: string | null = null,
+  ): Promise<ApprovalRequest> {
     return this.store.withProject(projectId, async (tx) => {
       const a = await tx.getApproval(approvalId);
       if (!a || a.projectId !== projectId) throw new Error(`unknown approval ${approvalId}`);
       if (a.status !== 'pending') throw new Error(`approval ${approvalId} already ${a.status}`);
-      await tx.setApprovalStatus(approvalId, decision);
+      await tx.setApprovalStatus(approvalId, decision, decidedBy);
       if (decision === 'approved' && a.kind === 'budget_raise' && raiseBy > 0) {
         const b = await this.budgetOf(tx, projectId);
         await tx.setBudget(projectId, { projectCap: b.projectCap + raiseBy, monthlyCap: b.monthlyCap + raiseBy });

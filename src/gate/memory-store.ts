@@ -84,6 +84,8 @@ export class MemoryGateStore implements GateStore {
       },
       findReservation: async (p, key) =>
         [...s().reservations.values()].find((r) => r.projectId === p && r.idempotencyKey === key) ?? null,
+      heldReservations: async (p) =>
+        [...s().reservations.values()].filter((r) => r.projectId === p && r.status === 'held').map((r) => ({ ...r })),
       getReservation: async (id) => s().reservations.get(id) ?? null,
       insertReservation: async (r) => {
         const full: Reservation = {
@@ -109,7 +111,7 @@ export class MemoryGateStore implements GateStore {
         const a = s().approvals.get(id);
         return a ? { ...a } : null;
       },
-      setApprovalStatus: async (id, status) => {
+      setApprovalStatus: async (id, status, _decidedBy) => {
         const a = s().approvals.get(id);
         if (!a) throw new Error(`unknown approval ${id}`);
         a.status = status;

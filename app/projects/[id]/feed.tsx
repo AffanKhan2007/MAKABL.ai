@@ -18,7 +18,7 @@ interface FeedEvent {
 /** Events that change what the rest of the page shows. */
 const REFRESH_ON = new Set([
   'task_paused', 'task_resumed', 'task_verified', 'task_failed', 'task_refused',
-  'approval_requested', 'approval_decided', 'budget_settled',
+  'approval_requested', 'approval_decided', 'budget_settled', 'build_mode_changed',
 ]);
 
 const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
@@ -44,6 +44,8 @@ function describe(e: FeedEvent): string {
     case 'task_failed': return `${task}failed: ${p.reason}`;
     case 'task_refused': return `${task}the model declined the request`;
     case 'calibration_recorded': return `${task}run recorded: ${money(num(p.cost))} over ${p.calls} calls`;
+    case 'workspace_ready': return `project prepared${p.templateWritten ? ' from the starter template' : ''}; dependencies installed in ${p.seconds}s (exit ${p.installExit})`;
+    case 'build_mode_changed': return `build mode set to ${p.mode}`;
     default: return `${task}${e.type}`;
   }
 }

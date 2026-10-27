@@ -2,10 +2,11 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { CostLine, PathPlan } from '../../../src/estimator/estimator.ts';
 import { gate, isRunning } from '../../../src/server/builds.ts';
+import { liveModeStatus } from '../../../src/server/live-mode.ts';
 import { BUILD_MODELS, planFor } from '../../../src/server/plan.ts';
 import { getProject } from '../../../src/server/projects.ts';
 import { FEATURE_TYPES, money, range, STATE_LABEL } from '../../format.ts';
-import { approvePlanAction, decideApprovalAction, startBuildAction } from './actions.ts';
+import { approvePlanAction, decideApprovalAction, setBuildModeAction, startBuildAction } from './actions.ts';
 import { Feed } from './feed.tsx';
 
 export const dynamic = 'force-dynamic';
@@ -91,21 +92,28 @@ export default async function ProjectPage({
   const project = await getProject(id);
   if (!project) notFound();
 
-  const g = gate();
+  const g = await gate();
   const plan = await planFor(project.spec);
   const budget = await g.getBudget(id).catch(() => null);
   const [spent, ledger, approvals] = budget
     ? await Promise.all([g.spent(id), g.ledgerFor(id), g.pendingApprovals(id)])
     : [0, [], []];
   const running = isRunning(id);
-  const s = STATE_LABEL[project.state] ?? { text: project.state, tone: '' as const };
+  // "building" with nothing running means the server restarted mid-build.
+  const interrupted = project.state === 'building' && !running;
+  const live = liveModeStatus();
+  const s = interrupted
+    ? { text: 'Interrupted', tone: 'bad' as const }
+    : STATE_LABEL[project.state] ?? { text: project.state, tone: '' as const };
   const paid = plan.paths.find((p) => p.path === 'paid')!;
   const buildExpected = paid.lines.filter((l) => l.unit === 'tokens').reduce((a, l) => a + (l.range?.expected ?? 0), 0);
   const buildHigh = paid.lines.filter((l) => l.unit === 'tokens').reduce((a, l) => a + (l.range?.high ?? 0), 0);
   const suggestedCap = Math.max(1, Math.ceil(buildExpected / 1_000_000) * 2);
   const modelLabel = BUILD_MODELS.find((m) => m.id === project.spec.buildModel)?.label ?? project.spec.buildModel;
   const cov = plan.calibration.coverage;
-  const canBuild = (project.state === 'approved' || project.state === 'paused') && approvals.length === 0 && !running;
+  const canBuild = (project.state === 'approved' || project.state === 'paused' || interrupted)
+    && approvals.length === 0 && !running && (project.buildMode === 'simulated' || live.available);
+  const canChangeMode = !running && ledger.length === 0;
 
   return (
     <main>
@@ -113,17 +121,24 @@ export default async function ProjectPage({
       <div className="row spread" style={{ marginBottom: 4 }}>
         <h1>{project.name}</h1>
         <div className="row">
-          {project.buildMode === 'simulated' && <span className="badge">Simulated build</span>}
+          {project.buildMode === 'simulated'
+            ? <span className="badge">Simulated build</span>
+            : <span className="badge warn">Live build</span>}
           <span className={`badge ${s.tone}`}>{running ? 'Building…' : s.text}</span>
         </div>
       </div>
       <p className="sub">{project.spec.idea}</p>
 
       {error && <p className="notice bad" role="alert">{error}</p>}
-      {project.buildMode === 'simulated' && (
+      {project.buildMode === 'simulated' ? (
         <p className="notice warn">
           Simulated build: a scripted stand-in plays the model. No API calls are made, no real money is spent,
           and these runs never feed the cost estimates. The costs shown are what the same calls would cost.
+        </p>
+      ) : (
+        <p className="notice bad">
+          Live build: calls the Claude API on your key and spends real money, within the caps below. Generated code
+          is installed, tested and built on this computer without a sandbox.
         </p>
       )}
 
@@ -202,6 +217,14 @@ export default async function ProjectPage({
           <h2 style={{ margin: 0 }}>Build</h2>
           {!budget && <p className="muted" style={{ margin: 0 }}>Approve the plan first.</p>}
           {running && <p className="notice warn" style={{ margin: 0 }}>Building now. Follow it in the live feed.</p>}
+          {interrupted && (
+            <p className="notice bad" style={{ margin: 0 }}>
+              The build stopped when the server restarted. Resuming replays finished steps at no cost.
+            </p>
+          )}
+          {project.buildMode === 'live' && !live.available && (
+            <p className="notice bad" style={{ margin: 0 }}>Live builds are not enabled on this server. {live.missing.join('. ')}.</p>
+          )}
           {project.state === 'verifying' && !running && (
             <p className="notice good" style={{ margin: 0 }}>
               Every feature passed its checks. Integration checks and the preview deploy are not built yet.
@@ -211,12 +234,41 @@ export default async function ProjectPage({
           {budget && project.state !== 'verifying' && (
             <form action={startBuildAction.bind(null, id)}>
               <button type="submit" disabled={!canBuild}>
-                {project.state === 'paused' ? 'Resume build' : 'Start build'}
+                {project.state === 'paused' || interrupted ? 'Resume build' : 'Start build'}
               </button>
             </form>
           )}
         </section>
       </div>
+
+      {canChangeMode && (
+        <section className="card stack">
+          <h2 style={{ margin: 0 }}>Build mode</h2>
+          {project.buildMode === 'live' ? (
+            <form action={setBuildModeAction.bind(null, id)} className="row">
+              <span>This project will call the Claude API.</span>
+              <button type="submit" name="mode" value="simulated" className="secondary">Switch back to simulated</button>
+            </form>
+          ) : live.available ? (
+            <form action={setBuildModeAction.bind(null, id)} className="stack">
+              <p style={{ margin: 0 }}>
+                A live build has Claude write the app for real on the Next.js starter project, spending money on your
+                API key within the caps, and logs each feature's real cost so future estimates improve.
+              </p>
+              <label className="check">
+                <input type="checkbox" name="confirm" value="yes" required />
+                I understand this spends real money and runs generated code on this computer without a sandbox.
+              </label>
+              <div><button type="submit" name="mode" value="live">Switch to live build</button></div>
+            </form>
+          ) : (
+            <div className="muted small">
+              <p style={{ margin: '0 0 6px' }}>Live builds are off on this server. To turn them on:</p>
+              <ul style={{ margin: 0, paddingLeft: 18 }}>{live.missing.map((m) => <li key={m}>{m}</li>)}</ul>
+            </div>
+          )}
+        </section>
+      )}
 
       {approvals.map((a) => (
         <section key={a.id} className="card stack" style={{ borderColor: 'var(--bad)' }}>

@@ -211,7 +211,7 @@ test('a budget block pauses; resuming replays earlier turns for free and finishe
   assert.equal(r?.cost, await gate.spent('proj'));
 });
 
-test('a failed model call ends the attempt; its worst case is booked and carried into the run', async () => {
+test('a failed model call retries the same turn under a new key; its worst case is booked', async () => {
   const { builder, gate, runs } = await setup([
     new Error('connection reset'),
     reply('tool_use', WRITE_OK()),
@@ -219,12 +219,47 @@ test('a failed model call ends the attempt; its worst case is booked and carried
   ]);
   const out = await builder.build(task());
   assert.equal(out.status, 'verified');
-  assert.equal(out.attempts, 2);
+  assert.equal(out.attempts, 1);
   const ledger = await gate.ledgerFor('proj');
   assert.equal(ledger[0]?.basis, 'estimated');
+  assert.match(ledger[1]?.description ?? '', /retry 1/);
   const [r] = await runs.list();
   assert.equal(r?.cost, await gate.spent('proj'));
   assert.equal(r?.calls, 3);
+});
+
+test('a turn that keeps failing ends the attempt and the next attempt starts fresh', async () => {
+  const { builder } = await setup([
+    new Error('down'), new Error('down'), new Error('down'),   // attempt 1, turn 1 and both retries
+    reply('tool_use', WRITE_OK()),
+    reply('end_turn'),
+  ]);
+  const out = await builder.build(task());
+  assert.equal(out.status, 'verified');
+  assert.equal(out.attempts, 2);
+});
+
+test('a build cut off mid-call resumes after its orphaned reservation is recovered', async () => {
+  const { builder, gate, sent, runs } = await setup([
+    reply('tool_use', WRITE_OK()),
+    reply('end_turn'),
+  ]);
+  // Simulate a crash: turn 1's reservation was taken, then the process died.
+  const orphan = await gate.authorize({
+    projectId: 'proj', taskId: 't_items', taskCeiling: usd(5), idempotencyKey: 't_items:a1:t1',
+    worstCase: usd(0.5), description: 'cut off',
+  });
+  assert.equal(orphan.ok, true);
+  assert.equal(await gate.recoverInterrupted('proj'), 1);
+  const [booked] = await gate.ledgerFor('proj');
+  assert.deepEqual([booked?.amount, booked?.basis], [usd(0.5), 'estimated']);
+
+  const out = await builder.build(task());
+  assert.equal(out.status, 'verified');
+  assert.equal(out.attempts, 1, 'the interrupted turn is retried, not the whole attempt');
+  assert.equal(sent.length, 2);
+  // The run includes the two real calls; the orphan predates the run.
+  assert.equal((await runs.list())[0]?.calls, 2);
 });
 
 // Symlink refusal is not tested here: creating a symlink on Windows needs admin rights.

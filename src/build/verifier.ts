@@ -58,12 +58,3 @@ export function summarize(results: readonly CheckResult[], outputChars = 1_500):
     return r.passed ? `${r.name}: ${status}` : `${r.name}: ${status}\n${r.output.slice(-outputChars)}`;
   }).join('\n\n');
 }
-
-/** The standard G3 checks for the supported stack (Next.js + TypeScript). */
-export const NEXTJS_G3_CHECKS: readonly CheckSpec[] = [
-  { name: 'install', gate: 'G3', command: ['npm', 'ci', '--no-audit', '--no-fund'], timeoutMs: 300_000, testsAuthoredBy: 'none' },
-  { name: 'typecheck', gate: 'G3', command: ['npx', 'tsc', '--noEmit'], timeoutMs: 180_000, testsAuthoredBy: 'none' },
-  { name: 'lint', gate: 'G3', command: ['npm', 'run', 'lint'], timeoutMs: 180_000, testsAuthoredBy: 'none' },
-  { name: 'build', gate: 'G3', command: ['npm', 'run', 'build'], timeoutMs: 600_000, testsAuthoredBy: 'none' },
-  { name: 'unit tests', gate: 'G3', command: ['npm', 'test'], timeoutMs: 300_000, testsAuthoredBy: 'agent' },
-];

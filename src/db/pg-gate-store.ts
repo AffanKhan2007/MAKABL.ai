@@ -4,6 +4,7 @@ import type {
   ApprovalRequest, Budget, GateStore, GateTx, LedgerEntry, Reservation,
 } from '../gate/store.ts';
 import { fromNumeric, toNumeric } from './money.ts';
+import { withTx, type DbScope } from './scope.ts';
 
 // Postgres GateStore. Each withProject() is one transaction holding a transaction-scoped
 // advisory lock on the project id, so check-and-reserve is serialised per project across
@@ -11,13 +12,12 @@ import { fromNumeric, toNumeric } from './money.ts';
 // setBudget, when the row does not exist yet.) Events are inserted in the same
 // transaction; the activity_events trigger NOTIFYs on commit only.
 
-export interface PgGateStoreOptions {
-  /**
-   * Sets app.user_id for each transaction so row-level security applies. Needed when the
-   * pool connects as makabl_app; superuser connections bypass RLS regardless.
-   */
-  userId?: string;
-}
+/**
+ * userId sets app.user_id so row-level security applies; role switches to a non-owner
+ * role (makabl_app) for each transaction, without which a superuser connection bypasses
+ * RLS regardless.
+ */
+export type PgGateStoreOptions = DbScope;
 
 type Q = Pick<pg.PoolClient, 'query'>;
 
@@ -73,11 +73,11 @@ const toApproval = (r: ApprovalRow): ApprovalRequest => ({
 
 export class PgGateStore implements GateStore {
   private readonly pool: pg.Pool;
-  private readonly userId: string | undefined;
+  private readonly scope: DbScope;
 
   constructor(pool: pg.Pool, opts: PgGateStoreOptions = {}) {
     this.pool = pool;
-    this.userId = opts.userId;
+    this.scope = opts;
   }
 
   withProject<T>(projectId: string, fn: (tx: GateTx) => Promise<T>): Promise<T> {
@@ -127,20 +127,8 @@ export class PgGateStore implements GateStore {
     });
   }
 
-  private async transaction<T>(fn: (c: pg.PoolClient) => Promise<T>): Promise<T> {
-    const c = await this.pool.connect();
-    try {
-      await c.query('begin');
-      if (this.userId) await c.query(`select set_config('app.user_id', $1, true)`, [this.userId]);
-      const result = await fn(c);
-      await c.query('commit');
-      return result;
-    } catch (err) {
-      await c.query('rollback');
-      throw err;
-    } finally {
-      c.release();
-    }
+  private transaction<T>(fn: (c: pg.PoolClient) => Promise<T>): Promise<T> {
+    return withTx(this.pool, this.scope, fn);
   }
 
   private tx(c: Q): GateTx {
@@ -185,6 +173,13 @@ export class PgGateStore implements GateStore {
           `select ${resCols} from reservations where project_id = $1 and idempotency_key = $2`,
           [projectId, key]);
         return r && toReservation(r);
+      },
+
+      heldReservations: async (projectId) => {
+        const { rows } = await c.query<ReservationRow>(
+          `select ${resCols} from reservations where project_id = $1 and status = 'held' order by created_at`,
+          [projectId]);
+        return rows.map(toReservation);
       },
 
       getReservation: async (id) => {
@@ -242,10 +237,9 @@ export class PgGateStore implements GateStore {
         return r && toApproval(r);
       },
 
-      // decided_by stays null until the API layer passes the deciding user through.
-      setApprovalStatus: (id, status) => mustUpdate(
-        `update approvals set status = $2, decided_at = now() where id = $1`,
-        [id, status], `approval ${id}`),
+      setApprovalStatus: (id, status, decidedBy) => mustUpdate(
+        `update approvals set status = $2, decided_by = $3, decided_at = now() where id = $1`,
+        [id, status, decidedBy], `approval ${id}`),
 
       appendEvent: async (e) => {
         await c.query(

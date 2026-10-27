@@ -62,6 +62,7 @@ export interface GateTx {
   /** Settled amounts plus held worst cases; released reservations count as zero. */
   committed(projectId: string, filter: { taskId?: string; month?: string }): Promise<Micros>;
   findReservation(projectId: string, idempotencyKey: string): Promise<Reservation | null>;
+  heldReservations(projectId: string): Promise<Reservation[]>;
   getReservation(id: string): Promise<Reservation | null>;
   insertReservation(r: Omit<Reservation, 'id' | 'status' | 'observed' | 'result' | 'failed'>): Promise<Reservation>;
   /** Reuse a released reservation's key for a fresh attempt. */
@@ -71,7 +72,8 @@ export interface GateTx {
   insertLedger(e: LedgerEntry): Promise<void>;
   insertApproval(a: NewApproval): Promise<ApprovalRequest>;
   getApproval(id: string): Promise<ApprovalRequest | null>;
-  setApprovalStatus(id: string, status: ApprovalStatus): Promise<void>;
+  /** `decidedBy` is the deciding user's id, recorded for the audit log (FR-28). */
+  setApprovalStatus(id: string, status: ApprovalStatus, decidedBy: string | null): Promise<void>;
   /** Events become visible to subscribers only if the transaction commits. */
   appendEvent(e: NewEvent): Promise<void>;
 }

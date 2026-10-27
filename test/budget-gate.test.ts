@@ -132,6 +132,17 @@ for (const { name, make } of envs) {
       assert.equal(await gate.execute(req(P, { idempotencyKey: 'k_failed:retry' }), async () => ({ result: 'ok', observed: 0 })), 'ok');
     });
 
+    test('recovering an interrupted build books held reservations at worst case, once', async () => {
+      const P = await project();
+      const held = await gate.authorize(req(P, { idempotencyKey: 'k_orphan', worstCase: usd(0.4) }));
+      assert.ok(held.ok && 'token' in held);
+      await gate.execute(req(P), async () => ({ result: 1, observed: usd(0.1) }));
+      assert.equal(await gate.recoverInterrupted(P), 1);
+      assert.equal(await gate.recoverInterrupted(P), 0);
+      assert.equal(await gate.spent(P), usd(0.5));
+      await assert.rejects(gate.authorize(req(P, { idempotencyKey: 'k_orphan' })), FailedAttemptReplayError);
+    });
+
     test('approving a budget raise lets the paused task proceed', async () => {
       const P = await project(usd(0.5));
       const blocked = await gate.authorize(req(P, { worstCase: usd(0.6) }));

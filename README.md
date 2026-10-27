@@ -5,20 +5,6 @@ shows a ranged cost plan (free path vs paid path) and enforces a spending cap, p
 before any paid action. See `docs/working-model-and-requirements.md` (the plan) and
 `docs/research-critique.md` (the evidence behind it).
 
-## Status: P1 core (cost engine + Budget Gate on Postgres)
-
-| Piece | File | State |
-|---|---|---|
-| MVP schema (section 8) | `db/schema.sql`, `db/roles.sql` | Applied and tested on Postgres 17, including row-level security |
-| Pricing registry + seed | `src/registry/` | Verified against official pages on 2026-10-27; recheck by 2027-01-27, after which prices show as assumptions. Includes cache write/read rates and Haiku 5.5's long-prompt tier |
-| Estimator (7.2, 7.3) | `src/estimator/estimator.ts` | Build cost from, best first: probe x logged full/probe ratios, P10/P50/P90 of logged runs (10+), or a cached agent-loop prior. Vercel usage from expected traffic. Commercial-use gate, unpriced bucket, published track record |
-| Calibration runs | `src/calibration/runs.ts`, `src/db/pg-run-log.ts` | Every real build's tokens and booked cost, append-only, pooled across tenants |
-| Claude adapter | `src/adapters/claude.ts` | All model calls go through the Budget Gate; counts tokens, reserves the worst case (incl. a refusal fallback), prices each attempt at its own model. Not yet run against the live API |
-| Build loop (P2) | `src/build/` | One agent per feature with file tools on a confined workspace; platform-defined checks; bounded retries by count and cost; pause on budget block and resume by replay; logs a calibration run per feature. Tested only against a scripted fake model |
-| Budget Gate (7.4) | `src/gate/budget-gate.ts` | Reserve then settle, task/project/monthly caps, idempotency keys, approvals |
-| Gate storage | `src/gate/store.ts` | `MemoryGateStore` (tests, demo) and `PgGateStore` (one transaction + advisory lock per project) |
-| Event log | `src/events/event-store.ts`, `src/db/pg-event-log.ts` | Append-only; Postgres feed via LISTEN/NOTIFY, fired on commit only |
-
 ## Try the app
 
 Requires Node 23.6+. From the project folder:
@@ -26,7 +12,7 @@ Requires Node 23.6+. From the project folder:
 ```bash
 npm install
 npm run db:local    # start Postgres 17 (no Docker needed); keeps running until db:local:stop
-npm run db:reset    # create the tables (first time only; wipes local data)
+npm run db:reset    # create the app's tables (first time only; wipes the app's local data)
 npm run dev         # then open http://localhost:3000
 ```
 
@@ -34,48 +20,69 @@ npm run dev         # then open http://localhost:3000
 2. **Cost plan**: free vs paid path, each line with its range and confidence.
 3. **Approve**: set the caps. Try a low cap (for example $1) to see the Budget Gate pause the build.
 4. **Start build**: watch the live feed. When the Gate pauses it, approve a raise to resume.
+   If the server stops mid-build, the page offers **Resume build**; finished steps replay free.
 
-Builds are **simulated**: a scripted stand-in plays the model, so no API key is needed,
-nothing is spent, and simulated runs never feed the cost estimates. There is no sign-in
-yet; everything belongs to one local development user.
+New projects build in **simulated** mode: a scripted stand-in plays the model, so no API
+key is needed, nothing is spent, and simulated runs never feed the cost estimates. There
+is no sign-in yet; everything belongs to one local development user, and every app query
+runs as that user under row-level security.
 
-## Run
+### Live builds (real Claude, real money)
 
-Requires Node 23.6+ (runs TypeScript directly, no build step).
+A live build has Claude write the app on a Next.js starter project, runs the type check,
+tests and production build on it, and records each feature's real cost so estimates
+improve. It is off until you turn it on:
+
+1. Copy `.env.example` to `.env.local` and set `ANTHROPIC_API_KEY`.
+2. Set `MAKABL_ALLOW_UNSANDBOXED_BUILDS=1`. Generated code (npm install, tests, next build)
+   runs on this computer **without a sandbox**; only set this if you accept that.
+3. Restart `npm run dev`. On a new project, before building, use **Switch to live build**
+   and tick the confirmation. Keep the caps low for the first runs.
+
+The API key stays in the server process; generated code runs with a stripped environment
+and never sees it.
+
+## Status
+
+| Piece | File | State |
+|---|---|---|
+| Web app | `app/`, `src/server/` | Intake, cost plan, approvals, simulated and live builds, live feed, ledger. Every query runs as `makabl_app` under RLS |
+| MVP schema (section 8) | `db/schema.sql`, `db/roles.sql` | Postgres 17, RLS on every tenant table including child tables |
+| Pricing registry + seed | `src/registry/` | Verified against official pages on 2026-10-27; recheck by 2027-01-27, after which prices show as assumptions |
+| Estimator (7.2, 7.3) | `src/estimator/estimator.ts` | Probe x logged ratios, P10/P50/P90 of logged runs (10+), or a cached agent-loop prior; Vercel usage from traffic; commercial-use gate; track record |
+| Budget Gate (7.4) | `src/gate/` | Reserve then settle, task/project/monthly caps, idempotency keys, approvals with who decided, recovery of calls cut off by a restart |
+| Claude adapter | `src/adapters/claude.ts` | Every call through the Gate; worst case includes a refusal fallback; each attempt priced at its own model. Not yet run against the live API |
+| Build loop (P2) | `src/build/` | One agent per feature, confined workspace, platform checks, bounded retries, pause/resume by replay (tool log in Postgres), calibration run per feature |
+| Starter template | `src/build/template.ts` | Next.js 16.4.3 + TypeScript + node:test; install, type check, tests and build verified to pass |
+
+## Development
 
 ```bash
-npm install
-npm run db:up       # Postgres 17 in Docker on localhost:5433 (needs Docker Desktop + WSL)
-npm run db:local    # or: the same Postgres 17 without Docker; runs detached until db:local:stop
-npm run db:reset    # drop and re-apply db/schema.sql + db/roles.sql (local hosts only)
-npm test            # gate suite on memory and Postgres, RLS, estimator
+npm run db:reset:test   # create the tests' own database (makabl_test); first time only
+npm test                # all suites; Postgres suites skip if makabl_test is missing
 npm run typecheck
-npm run demo        # cost plan, then a forced overrun that pauses for approval
-npm run demo -- --pg
+npm run build           # Next.js production build
+npm run demo            # terminal walk-through of the cost plan and a forced pause
+npm run db:up           # alternative: Postgres in Docker (needs Docker Desktop + WSL)
 ```
 
-Postgres tests skip themselves when no database is reachable at `DATABASE_URL`
-(default `postgres://postgres:makabl@localhost:5433/makabl`). The demo simulates model
-calls; nothing is sent to a provider.
+Tests never touch the app's database: they write calibration runs, and the app's
+estimates must only learn from real builds.
 
 ### Postgres notes
 
-- Row-level security does not apply to superusers or table owners. The app must connect
-  as (or `SET ROLE` to) `makabl_app` and construct `PgGateStore` with `{ userId }`.
-- NOTIFY ignores RLS: every listener gets every project's events. Always subscribe with
-  a `projectId` filter before forwarding to a browser.
-- `agent_runs`, `artifact_versions`, `task_dependencies`, `usage_events` and `deployments`
-  have no `project_id`, so they have no RLS policy yet.
+- Row-level security does not apply to superusers or table owners. The app connects as
+  the login role and switches to `makabl_app` per transaction (`src/db/scope.ts`).
+- NOTIFY ignores RLS: every listener gets every project's events. The feed filters by
+  project before anything reaches a browser.
 
 ## Next
 
-1. Real sandbox for checks (container with no network or secrets, CPU/memory limits); the
-   current workspace runs checks as local processes and is for development only.
-2. Persist the tool log in Postgres so a build can resume after a process restart.
-3. Calibration: 10+ real runs per feature type (with probes) so estimates stop using priors.
-3. Sign-in, and connect as `makabl_app` with the signed-in user so RLS applies in the app.
-4. Live build mode (real Claude calls, behind an explicit opt-in per project).
-5. RLS for the child tables listed above; record `decided_by` on approvals.
-4. Check Supabase and GitHub commercial-use terms (only Vercel's were verified).
+1. Sign-in (an auth provider), replacing the single dev user in `src/server/session.ts`.
+2. A real sandbox for generated code (container: no network or secrets, CPU/memory limits).
+3. First live builds, then 10+ runs per feature type so estimates stop using priors.
+4. User-approved acceptance criteria per feature (live builds use generic criteria now).
+5. Integration checks and preview deploy to Vercel (gates G4, G5).
+6. Check Supabase and GitHub commercial-use terms (only Vercel's were verified).
 
 P0 (8 to 10 user interviews, with a commitment ask) is still open and is not a code task.

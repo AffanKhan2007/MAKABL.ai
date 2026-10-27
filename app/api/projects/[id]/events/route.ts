@@ -2,6 +2,7 @@ import { PgEventLog } from '../../../../../src/db/pg-event-log.ts';
 import type { ActivityEvent } from '../../../../../src/events/event-store.ts';
 import { db } from '../../../../../src/server/db.ts';
 import { getProject } from '../../../../../src/server/projects.ts';
+import { userScope } from '../../../../../src/server/session.ts';
 
 // Server-sent events for one project's feed: the history, then new events as they are
 // committed. The subscription starts before the history is read and events are
@@ -14,7 +15,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const { id } = await params;
   if (!(await getProject(id))) return new Response('Not found', { status: 404 });
 
-  const log = new PgEventLog(db());
+  // History is read under row-level security. LISTEN cannot be, hence the filter below.
+  const log = new PgEventLog(db(), await userScope());
   const encoder = new TextEncoder();
   let cleanup = () => {};
 

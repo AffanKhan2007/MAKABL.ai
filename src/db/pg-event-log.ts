@@ -1,5 +1,6 @@
 import pg from 'pg';
 import type { ActivityEvent, EventLog, Listener, NewEvent } from '../events/event-store.ts';
+import { withTx, type DbScope } from './scope.ts';
 
 // activity_events-backed EventLog. Subscribers use LISTEN on a dedicated connection; the
 // table's trigger NOTIFYs on commit, so a rolled-back Gate transaction never shows up.
@@ -25,23 +26,30 @@ const toEvent = (r: EventRow): ActivityEvent => ({
 
 export class PgEventLog implements EventLog {
   private readonly pool: pg.Pool;
+  private readonly scope: DbScope;
 
-  constructor(pool: pg.Pool) {
+  /** With a scope, reads and writes go through row-level security (see db/scope.ts). */
+  constructor(pool: pg.Pool, scope: DbScope = {}) {
     this.pool = pool;
+    this.scope = scope;
   }
 
-  async append(e: NewEvent): Promise<ActivityEvent> {
-    const { rows } = await this.pool.query<EventRow>(
-      `insert into activity_events (project_id, task_id, type, payload, annotation)
-       values ($1, $2, $3, $4, $5) returning *`,
-      [e.projectId, e.taskId, e.type, JSON.stringify(e.payload), e.annotation ?? null]);
-    return toEvent(rows[0]!);
+  append(e: NewEvent): Promise<ActivityEvent> {
+    return withTx(this.pool, this.scope, async (c) => {
+      const { rows } = await c.query<EventRow>(
+        `insert into activity_events (project_id, task_id, type, payload, annotation)
+         values ($1, $2, $3, $4, $5) returning *`,
+        [e.projectId, e.taskId, e.type, JSON.stringify(e.payload), e.annotation ?? null]);
+      return toEvent(rows[0]!);
+    });
   }
 
-  async list(projectId: string): Promise<ActivityEvent[]> {
-    const { rows } = await this.pool.query<EventRow>(
-      'select * from activity_events where project_id = $1 order by seq', [projectId]);
-    return rows.map(toEvent);
+  list(projectId: string): Promise<ActivityEvent[]> {
+    return withTx(this.pool, this.scope, async (c) => {
+      const { rows } = await c.query<EventRow>(
+        'select * from activity_events where project_id = $1 order by seq', [projectId]);
+      return rows.map(toEvent);
+    });
   }
 
   async subscribe(l: Listener, filter: { projectId?: string } = {}): Promise<() => Promise<void>> {

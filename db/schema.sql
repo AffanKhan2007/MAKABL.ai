@@ -250,6 +250,17 @@ create table calibration_runs (
 );
 create index calibration_runs_feature on calibration_runs (feature_type, model);
 
+-- Tool results already shown to the model, so a build resumed after a pause or a
+-- restart replays the same history. First write wins (insert ... on conflict do nothing).
+create table build_tool_results (
+  project_id  uuid not null references projects(id),
+  step_key    text not null,         -- <task>:a<attempt>:t<turn>:<tool_use id>
+  content     text not null,
+  is_error    boolean not null,
+  created_at  timestamptz not null default now(),
+  primary key (project_id, step_key)
+);
+
 -- ---------------------------------------------------------------- delivery
 create table environments (
   id          uuid primary key default gen_random_uuid(),
@@ -330,7 +341,7 @@ declare t text;
 begin
   foreach t in array array['project_specs','artifacts','tasks','activity_events','approvals',
                            'cost_estimates','budgets','reservations','cost_ledger_entries',
-                           'environments','test_runs','secret_refs']
+                           'environments','test_runs','secret_refs','build_tool_results']
   loop
     execute format('alter table %I enable row level security', t);
     execute format($p$create policy %I_owner on %I using (
@@ -339,3 +350,24 @@ begin
     )$p$, t, t);
   end loop;
 end $$;
+
+-- Child tables without a project_id reach it through their parent. The subquery on the
+-- parent is itself filtered by the parent's policy, so these see exactly what it sees.
+alter table artifact_versions enable row level security;
+create policy artifact_versions_owner on artifact_versions
+  using (artifact_id in (select id from artifacts));
+alter table task_dependencies enable row level security;
+create policy task_dependencies_owner on task_dependencies
+  using (task_id in (select id from tasks));
+alter table agent_runs enable row level security;
+create policy agent_runs_owner on agent_runs
+  using (task_id in (select id from tasks));
+alter table usage_events enable row level security;
+create policy usage_events_owner on usage_events
+  using (reservation_id in (select id from reservations));
+alter table deployments enable row level security;
+create policy deployments_owner on deployments
+  using (environment_id in (select id from environments));
+
+-- Shared reference data, deliberately without RLS: provider_products, pricing_versions
+-- (public prices) and calibration_runs (token counts and costs only, pooled by design).
