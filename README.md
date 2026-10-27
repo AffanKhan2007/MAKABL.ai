@@ -19,6 +19,26 @@ before any paid action. See `docs/working-model-and-requirements.md` (the plan) 
 | Gate storage | `src/gate/store.ts` | `MemoryGateStore` (tests, demo) and `PgGateStore` (one transaction + advisory lock per project) |
 | Event log | `src/events/event-store.ts`, `src/db/pg-event-log.ts` | Append-only; Postgres feed via LISTEN/NOTIFY, fired on commit only |
 
+## Try the app
+
+Requires Node 23.6+. From the project folder:
+
+```bash
+npm install
+npm run db:local    # start Postgres 17 (no Docker needed); keeps running until db:local:stop
+npm run db:reset    # create the tables (first time only; wipes local data)
+npm run dev         # then open http://localhost:3000
+```
+
+1. **New project**: describe the app and its features (the form is pre-filled with an example).
+2. **Cost plan**: free vs paid path, each line with its range and confidence.
+3. **Approve**: set the caps. Try a low cap (for example $1) to see the Budget Gate pause the build.
+4. **Start build**: watch the live feed. When the Gate pauses it, approve a raise to resume.
+
+Builds are **simulated**: a scripted stand-in plays the model, so no API key is needed,
+nothing is spent, and simulated runs never feed the cost estimates. There is no sign-in
+yet; everything belongs to one local development user.
+
 ## Run
 
 Requires Node 23.6+ (runs TypeScript directly, no build step).
@@ -53,8 +73,9 @@ calls; nothing is sent to a provider.
    current workspace runs checks as local processes and is for development only.
 2. Persist the tool log in Postgres so a build can resume after a process restart.
 3. Calibration: 10+ real runs per feature type (with probes) so estimates stop using priors.
-3. Next.js app: intake, cost plan screen, approval queue, SSE feed.
-4. RLS for the child tables listed above; record `decided_by` on approvals.
+3. Sign-in, and connect as `makabl_app` with the signed-in user so RLS applies in the app.
+4. Live build mode (real Claude calls, behind an explicit opt-in per project).
+5. RLS for the child tables listed above; record `decided_by` on approvals.
 4. Check Supabase and GitHub commercial-use terms (only Vercel's were verified).
 
 P0 (8 to 10 user interviews, with a commitment ask) is still open and is not a code task.
