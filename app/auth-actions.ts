@@ -1,8 +1,8 @@
 'use server';
 
 import { redirect } from 'next/navigation';
-import { signIn, signUp } from '../src/auth/accounts.ts';
-import { db } from '../src/server/db.ts';
+import { signIn, signUp, type AuthResult } from '../src/auth/accounts.ts';
+import { db, DB_UNAVAILABLE_MESSAGE, isDbUnavailable } from '../src/server/db.ts';
 import { signOutCurrent, startSession } from '../src/server/session.ts';
 
 export interface AuthFormState {
@@ -13,9 +13,20 @@ export interface AuthFormState {
 
 const field = (form: FormData, key: string) => String(form.get(key) ?? '');
 
+/** Runs an auth call, turning "database unreachable" into a message instead of a crash. */
+async function attempt(email: string, call: () => Promise<AuthResult>): Promise<AuthResult | AuthFormState> {
+  try {
+    return await call();
+  } catch (err) {
+    if (isDbUnavailable(err)) return { error: DB_UNAVAILABLE_MESSAGE, email };
+    throw err;
+  }
+}
+
 export async function signUpAction(_prev: AuthFormState, form: FormData): Promise<AuthFormState> {
   const email = field(form, 'email').slice(0, 254);
-  const result = await signUp(db(), email, field(form, 'password'));
+  const result = await attempt(email, () => signUp(db(), email, field(form, 'password')));
+  if (!('ok' in result)) return result;
   if (!result.ok) return { error: result.error, email };
   await startSession(result);
   redirect('/');
@@ -23,7 +34,8 @@ export async function signUpAction(_prev: AuthFormState, form: FormData): Promis
 
 export async function signInAction(_prev: AuthFormState, form: FormData): Promise<AuthFormState> {
   const email = field(form, 'email').slice(0, 254);
-  const result = await signIn(db(), email, field(form, 'password'));
+  const result = await attempt(email, () => signIn(db(), email, field(form, 'password')));
+  if (!('ok' in result)) return result;
   if (!result.ok) return { error: result.error, email };
   await startSession(result);
   redirect('/');

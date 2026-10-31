@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
+import { DB_UNAVAILABLE_MESSAGE, isDbUnavailable } from '../src/server/db.ts';
 import { getSessionUser } from '../src/server/session.ts';
 import { signOutAction } from './auth-actions.ts';
 import './globals.css';
@@ -11,7 +12,29 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
-  const user = await getSessionUser();
+  let user: Awaited<ReturnType<typeof getSessionUser>> = null;
+  let dbDown = false;
+  try {
+    user = await getSessionUser();
+  } catch (err) {
+    if (!isDbUnavailable(err)) throw err;
+    dbDown = true;
+  }
+  if (dbDown) {
+    return (
+      <html lang="en">
+        <body>
+          <div className="shell">
+            <header className="topbar"><span className="brand">MAKABL</span></header>
+            <main style={{ maxWidth: 520, margin: '40px auto' }}>
+              <h1>Can&rsquo;t reach the database</h1>
+              <p className="notice bad">{DB_UNAVAILABLE_MESSAGE}</p>
+            </main>
+          </div>
+        </body>
+      </html>
+    );
+  }
   return (
     <html lang="en">
       <body>

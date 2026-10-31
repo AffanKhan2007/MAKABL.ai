@@ -3,7 +3,7 @@ import { cache } from 'react';
 import { redirect } from 'next/navigation';
 import { endSession, sessionUser, type AuthResult, type SessionUser } from '../auth/accounts.ts';
 import { APP_ROLE, type DbScope } from '../db/scope.ts';
-import { db } from './db.ts';
+import { db, DbUnavailableError, isDbUnavailable } from './db.ts';
 
 // The signed-in user and the database scope their requests run in. Everything the app
 // does for a user runs as makabl_app with app.user_id set, under row-level security.
@@ -13,7 +13,12 @@ export const SESSION_COOKIE = 'makabl_session';
 /** Looked up once per request, however many components and queries ask. */
 export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
-  return sessionUser(db(), token);
+  try {
+    return await sessionUser(db(), token);
+  } catch (err) {
+    if (isDbUnavailable(err)) throw new DbUnavailableError();
+    throw err;
+  }
 });
 
 /** The signed-in user, or a redirect to the sign-in page. */
