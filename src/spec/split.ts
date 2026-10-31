@@ -20,7 +20,9 @@ export const SPLIT_SYSTEM = [
   '- page: a page that shows information',
   '- integration: a connection to another service (payments, email, maps)',
   'Names are short and plain (under 40 characters). Give each feature 1 to 3 acceptance criteria:',
-  'concrete, checkable sentences about what a user can do or see. Only include what the description asks for.',
+  'concrete, checkable sentences about what a user can do or see. Only include what the description asks for:',
+  'no sign-in unless people sign in, no database or API unless users add or change data, and fixed content',
+  'such as a short list on a page belongs in that page. Fewer features is better.',
 ].join('\n');
 
 export const splitPrompt = (idea: string): string => `App description:\n${idea}`;
