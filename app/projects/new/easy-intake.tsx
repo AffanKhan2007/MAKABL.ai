@@ -1,7 +1,8 @@
 'use client';
 
-import { useActionState, useTransition, type FormEvent } from 'react';
+import { useActionState, useRef, useState, useTransition, type FormEvent } from 'react';
 import type { IntakeState } from './actions.ts';
+import { WizardActions, WizardProgress } from './wizard-ui.tsx';
 
 // Easy mode intake: plain questions and tick boxes, no feature types, models or criteria.
 // It fills in the same fields the full form sends, so the server checks it the same way;
@@ -51,6 +52,8 @@ export function EasyIntake({ action, presets }: {
 }) {
   const [state, formAction, pending] = useActionState<IntakeState, FormData>(action, { error: null });
   const [, startTransition] = useTransition();
+  const [step, setStep] = useState(1);
+  const formRef = useRef<HTMLFormElement>(null);
 
   // Submitted by hand so a validation error does not wipe the form (React resets forms
   // after an action), and so the tick boxes can become the feature rows the server expects.
@@ -70,9 +73,24 @@ export function EasyIntake({ action, presets }: {
     startTransition(() => formAction(data));
   };
 
+  const continueStep = () => {
+    const invalid = formRef.current?.querySelector<HTMLElement>(`[data-step="${step}"] :invalid`);
+    if (invalid instanceof HTMLInputElement || invalid instanceof HTMLTextAreaElement || invalid instanceof HTMLSelectElement) {
+      invalid.reportValidity();
+      return;
+    }
+    setStep((current) => Math.min(4, current + 1));
+  };
+
   return (
-    <form onSubmit={onSubmit} className="stack">
-      <section className="card stack">
+    <form ref={formRef} onSubmit={onSubmit} className="stack wizard-form" data-current-step={step}>
+      <WizardProgress step={step} />
+      <section className="card stack wizard-panel" data-wizard-panel data-step="1">
+        <div className="wizard-panel-heading">
+          <span className="eyebrow">Step 1 · Describe</span>
+          <h2>Start with the idea</h2>
+          <p className="muted small">Give your project a name and describe it in your own words.</p>
+        </div>
         <div>
           <label htmlFor="name">What is your app called?</label>
           <input id="name" name="name" type="text" required maxLength={80} defaultValue="Table bookings" />
@@ -88,9 +106,12 @@ export function EasyIntake({ action, presets }: {
         </label>
       </section>
 
-      <section className="card stack">
-        <h2 style={{ margin: 0 }}>What does it need?</h2>
-        <p className="muted small" style={{ margin: 0 }}>Tick everything that fits. Each one is built and checked separately.</p>
+      <section className="card stack wizard-panel" data-wizard-panel data-step="2">
+        <div className="wizard-panel-heading">
+          <span className="eyebrow">Step 2 · Features</span>
+          <h2>What does it need?</h2>
+          <p className="muted small">Choose everything that fits. Each one is built and checked separately.</p>
+        </div>
         <div className="choice-list">
           {NEEDS.map((n) => (
             <label key={n.key} className="choice">
@@ -101,8 +122,12 @@ export function EasyIntake({ action, presets }: {
         </div>
       </section>
 
-      <section className="card stack">
-        <h2 style={{ margin: 0 }}>How many people will use it?</h2>
+      <section className="card stack wizard-panel" data-wizard-panel data-step="3">
+        <div className="wizard-panel-heading">
+          <span className="eyebrow">Step 3 · Usage</span>
+          <h2>How many people will use it?</h2>
+          <p className="muted small">Choose the closest estimate. You can adjust your assumptions later.</p>
+        </div>
         <div className="choice-list">
           {VISITORS.map((v) => (
             <label key={v.value} className="choice">
@@ -113,9 +138,12 @@ export function EasyIntake({ action, presets }: {
         </div>
       </section>
 
-      <section className="card stack">
-        <h2 style={{ margin: 0 }}>How should we build it?</h2>
-        <p className="muted small" style={{ margin: 0 }}>You can change this later and see the price change.</p>
+      <section className="card stack wizard-panel" data-wizard-panel data-step="4">
+        <div className="wizard-panel-heading">
+          <span className="eyebrow">Step 4 · Build</span>
+          <h2>How should we build it?</h2>
+          <p className="muted small">Choose a starting approach. You can change this later and see the price change.</p>
+        </div>
         <div className="choice-list">
           {presets.map((p) => (
             <label key={p.id} className="choice">
@@ -127,8 +155,9 @@ export function EasyIntake({ action, presets }: {
       </section>
 
       {state.error && <p className="notice bad" role="alert">{state.error}</p>}
-      <button type="submit" disabled={pending}>{pending ? 'Working out the price…' : 'Show me what it costs'}</button>
-      <p className="muted small" style={{ margin: 0 }}>Nothing is built or charged until you say so.</p>
+      <WizardActions step={step} onPrevious={() => setStep((current) => Math.max(1, current - 1))}
+        onContinue={continueStep} pending={pending} submitLabel={pending ? 'Working out the price…' : 'Show me what it costs'} />
+      <p className="muted small wizard-reassurance" style={{ margin: 0 }}>Nothing is built or charged until you say so.</p>
     </form>
   );
 }
