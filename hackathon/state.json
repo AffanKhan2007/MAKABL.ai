@@ -182,7 +182,7 @@
       "id": 29,
       "text": "REMIND USER: make the builder match the approved render (layout, look, requirements): pass the chosen render to the builder and check the built app against it",
       "tier": "should",
-      "status": "open"
+      "status": "done"
     }
   ]
 }
