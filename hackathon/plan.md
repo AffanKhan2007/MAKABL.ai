@@ -87,11 +87,11 @@ path and one recorded real run. If #13 fails: demo from L1, say so, keep the vid
 
 ## Setting up each laptop (first 45 minutes, all four)
 
-Needs Node 23.6+ and git. Get the repo onto each laptop: push it to a private GitHub repo
-from L1 and clone it, or copy the folder over (the `node_modules` and `.pgdata` folders
-are not needed). Then, on each laptop:
+Needs Node 23.6+ and git. The repo is on GitHub (`main` is the branch everyone uses):
 
 ```bash
+git clone https://github.com/AffanKhan2007/MAKABL.ai.git
+cd MAKABL.ai
 npm install
 npm run db:local
 npm run db:reset
