@@ -31,6 +31,16 @@ Everything below is real software. Where something has not run live, the script 
 Order of speakers matters less than the rule: **one person drives the keyboard (Affan), the
 others only talk.**
 
+## If you get 3 minutes: the live evidence (all real projects on this laptop)
+
+1. **Brew and Bean → Wireframe and renders.** Show render v1 (dark roast) and v2 (cream and green). "Each is drawn by a model; every version keeps its tokens and cost."
+2. **Overview → Rebuild.** "We changed the look and rebuilt. The site took v2's exact palette; 15 of 15 colours and wordings from the render were found in the code." (Plan and steer page shows the overseer's notes and the percentage.)
+3. **Plan and steer.** "Pro users can stop the build after the plan, edit it, and add instructions. We added 'Free Wi-Fi for every customer' and it is in the site."
+4. **Tidy Bakes → Relay timeline.** "Same pipeline on a $0.07 cap: the negotiator granted from slack, then escalated, the Gate paused before the cap, we approved a raise, it finished."
+5. **Quality vs cost.** Say plainly: one feature per project, so one point; the formula is on the page.
+
+Say, if asked: no model has asked for budget on its own yet; the reviewer and overseer are small models.
+
 ## What to say when a screen is not live
 
 - Anything on the **public link** is read-only for builds (live builds are off there). Say:

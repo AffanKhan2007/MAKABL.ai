@@ -33,13 +33,17 @@ Honest status, as of 1 Nov 2026:
 | Renders | A model draws each page as a mockup, shown in a sandboxed frame (desktop or phone). The user asks for changes in words and gets a new version; every version is kept with its model, tokens and cost. Verified live: two versions of a cafe page, $0.007 and $0.008 |
 | Live prices | Each plan cross-checks the registry against OpenRouter's public model list (53 of 57 models found), with a timestamp, and flags models whose live price differs. Vendors' own pages have no price API, so the registry is still typed in from them; the live list is the independent check |
 | Measured estimates | Spec, architect and review estimates use tokens per call measured from past builds in the event log. The build estimate uses logged calibration runs once there are 10 per feature type; until then it is a prior and says so |
-| Token negotiator | **Enforced and tested:** a phase's allowance caps its calls at the Budget Gate, and when no room can be found the owner is asked. The builder has a `request_budget` tool and the negotiator answers (slack, move from another phase, or decline). **Live evidence so far:** the system returned unspent allowance after every phase; no grant, move, decline or model request has happened in a real build yet because the builds fit their allowances. Those paths are covered by unit tests only |
+| Token negotiator | **Enforced and tested:** a phase's allowance caps its calls at the Budget Gate, and when no room can be found the owner is asked. The builder has a `request_budget` tool and the negotiator answers (slack, move from another phase, or decline). **Live evidence:** on a real build with a $0.07 cap the negotiator granted room from slack seven times, handed back unspent allowance twice, then escalated to the owner when none was left; the Gate paused the build before the cap could be crossed, and approving a raise resumed it and it finished. **Not yet seen live:** the builder model itself calling `request_budget` (it made 0 calls), so a model-initiated grant, move or decline is unit-tested only |
 | Build to a chosen render | The owner picks a render; the builder gets it as the design target and the reviewer checks against it. Verified once, live: a one-page bakery site matched its render's brand, copy, palette and structure, defined colours as CSS variables, and made no external requests. Its reviewer is the same small model, so that review is not independent. Images are emoji and CSS only: no real photography is generated |
-| Budget Gate: reserve, settle, caps, approvals, replay after restart | Working and tested |
+| Overseer and fidelity check | After each feature a coordinating model checks the code against the chosen render, the owner's instructions and the plan, and sends the builder a fix list; the render's colours and wording are also measured mechanically in the code. Ran live: it found real gaps, and two of its own bugs (reading only `app/`, and calling a clipped file incomplete) were found and fixed in the same run. Same small model family as the builder, so not an independent judge |
+| Rebuild | A built app can be built again from the current renders and instructions, or from one chosen render version (only the features that version governs). Verified live: after changing the render to a lighter look and rebuilding, the site took the new palette exactly (15 of 15 colours and wordings found) and the reviewer approved |
+| Pro steering | Plan and steer page: the build can pause after the plan is written (or after every feature), the owner edits the architect's plan and adds instructions for one feature or all, and the next feature built follows them. Verified live |
+| Quality vs cost | A graph and table of quality (checks passed, match to the render, reviewer) against cumulative spend per feature. Real data, but a one-feature project gives one point |
+| Budget Gate: reserve, settle, caps, approvals, replay after restart | Working and tested; stopped a real build before its cap and resumed after approval |
 | Gemini adapter | Live-tested. Free-tier quotas are small (20 requests/day for Gemini 3.6 Flash), so a full build may need a paid key |
 | Claude adapter | Implemented and tested with a fake transport; needs an Anthropic API key with credit for a live run |
 | OpenAI / OpenRouter adapter | Implemented and tested with a mocked API; **not yet run live** (no key) |
-| A generated app passing all checks end to end | **Yes, once:** a one-page cafe specials site passed its type check, its own tests and the production build on the first attempt, plus the whole-project checks. Cost $0.02 of a $2.00 cap (estimate: $0.11). The model also added a fake sign-in wall nobody asked for, and its reviewer, the same small model, approved it. One run is not a benchmark |
+| A generated app passing all checks end to end | **Yes, once:** a one-page cafe specials site passed its type check, its own tests and the production build on the first attempt, plus the whole-project checks. Cost $0.02 of a $2.00 cap (estimate: $0.11). The model also added a fake sign-in wall nobody asked for, and its reviewer, the same small model, approved it. One run is not a benchmark. Later runs showed the cause: a cheap spec model invented an inventory app with sign-in from "five items with prices". Stricter spec and builder prompts cut one test build from 26 model calls and $0.097 to 8 calls and $0.019 (one run, not a benchmark) |
 | Sandbox for generated code | None: it runs on the build machine. Do not run builds on a machine with personal data |
 
 ## Try it
@@ -108,7 +112,7 @@ Design documents: `docs/working-model-and-requirements.md` (the plan) and
 
 ```bash
 npm run db:reset:test   # the tests' own database (makabl_test), first time only
-npm test                # 147 tests; none call a real API
+npm test                # 185 tests; none call a real API
 npm run typecheck
 npm run build
 ```

@@ -42,6 +42,30 @@ first real runs started the track record this weekend.
 1.9K-token brief instead of 42K of build history. One run is not a benchmark; we have no
 averages yet.
 
+**Did you see models negotiate for real?** Partly. On a real build with a $0.07 cap the
+negotiator granted room from slack seven times, handed unspent allowance back twice, then
+escalated to the owner when none was left; the Gate paused before the cap and the build
+resumed after we approved a raise. The builder model never asked for budget itself (it made
+zero `request_budget` calls), so a model-initiated request is tested but not seen live.
+
+**Does the built site match the render?** We measured it. After changing a render to a lighter
+look and rebuilding, the site took the new palette exactly and 15 of 15 colours and wordings
+from the render were found in the code. That is one page on a small model; images are emoji
+and CSS only.
+
+**Who checks the builder's work?** Tests and checks, a reviewer model, and an overseer that
+compares the code to the render and the owner's instructions. The reviewer and overseer are
+the same kind of small model as the builder, so they are not independent judges; the colour
+and wording check is mechanical.
+
+**What can a Pro user control?** Pause after the plan or after every feature, edit the
+architect's plan, add instructions for one feature or all, choose a render version and rebuild
+from it, and read quality against cost per feature.
+
+**Why were cheap builds costing so much?** Cheap models invented extra features. One run built
+an inventory app with sign-in from "five items with prices". Stricter prompts cut a test build
+from 26 model calls and $0.097 to 8 calls and $0.019. One run, not a benchmark.
+
 ## About safety and money
 
 **What stops it overspending?** Before every model call the Budget Gate reserves the call's
