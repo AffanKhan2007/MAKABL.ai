@@ -4,7 +4,7 @@ import {
   ClaudeAdapter, ProviderLimitError, sdkTransport,
   type ClaudeCall, type ClaudeMessage, type ClaudeTransport, type ModelCaller,
 } from '../adapters/claude.ts';
-import { geminiTransport } from '../adapters/gemini.ts';
+import { fetchPost, geminiTransport } from '../adapters/gemini.ts';
 import { openAiEndpointFrom, openAiTransport } from '../adapters/openai.ts';
 import { BUILDER_SYSTEM_PROMPT, FeatureBuilder } from '../build/build-loop.ts';
 import { INSTALL_COMMAND, LIVE_CHECKS, TEMPLATE_GUIDE, writeTemplate } from '../build/template.ts';
@@ -94,7 +94,7 @@ function liveSetup(provider: string): ModeSetup {
   return {
     // Provider keys stay in the server process and are never passed to the workspace.
     transport: provider === 'google'
-      ? geminiTransport(process.env.GEMINI_API_KEY!)
+      ? geminiTransport(fetchPost(process.env.GEMINI_API_KEY ?? ''))
       : provider === 'openai'
         ? openAiTransport(openAiEndpointFrom(process.env)!)
         : sdkTransport(new Anthropic()),

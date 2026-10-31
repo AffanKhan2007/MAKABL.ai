@@ -1,58 +1,46 @@
+import { randomUUID } from 'node:crypto';
 import type Anthropic from '@anthropic-ai/sdk';
 import { NotChargedError } from '../gate/budget-gate.ts';
 import { ProviderLimitError, type ClaudeMessage, type ClaudeTransport } from './claude.ts';
 
+// Gemini transport: lets the Claude adapter, and so the Budget Gate, drive a Gemini model.
+// The build loop speaks the Messages API shape; this translates each request to the
+// Gemini API's generateContent and each response back, the same way the simulated model
+// stands in for the API. Pricing still happens in the adapter from the usage returned here.
+//
+// Gemini 3 models return a thought signature with each function call that must be sent
+// back with that call on the next turn. It rides on the tool_use block (the build loop
+// passes assistant content back unchanged) and is restored when the history is converted.
+
 type MessageParams = Anthropic.Beta.Messages.MessageCreateParamsNonStreaming;
 type CountParams = Anthropic.Beta.Messages.MessageCountTokensParams;
 
-const API = 'https://generativelanguage.googleapis.com/v1beta/models';
+const API = 'https://generativelanguage.googleapis.com/v1beta';
 
-function contents(params: Pick<MessageParams, 'messages'>) {
-  const functionNames = new Map<string, string>();
-  return params.messages.map((message) => {
-    const role = message.role === 'assistant' ? 'model' : 'user';
-    const blocks: Array<Record<string, any>> = typeof message.content === 'string'
-      ? [{ type: 'text', text: message.content }]
-      : (message.content ?? []) as unknown as Array<Record<string, any>>;
-    const parts: Array<Record<string, unknown>> = [];
-    for (const block of blocks) {
-      if (block.type === 'text') {
-        parts.push({ text: block.text });
-        continue;
-      }
-      if (block.type === 'tool_use') {
-        functionNames.set(block.id, block.name);
-        parts.push({ functionCall: { name: block.name, args: block.input },
-          ...(typeof block.thoughtSignature === 'string' ? { thoughtSignature: block.thoughtSignature } : {}) });
-        continue;
-      }
-      if (block.type === 'tool_result') {
-        const response = typeof block.content === 'string' ? block.content
-          : block.content?.map((part: { type?: string; text?: string }) => part.type === 'text' ? part.text : '').join('') ?? '';
-        parts.push({ functionResponse: { name: functionNames.get(block.tool_use_id) ?? block.tool_use_id, response: { result: response } } });
-      }
-    }
-    return { role, parts };
-  });
+interface GeminiPart {
+  text?: string;
+  thought?: boolean;
+  thoughtSignature?: string;
+  functionCall?: { name: string; args?: Record<string, unknown> };
+  functionResponse?: { name: string; response: Record<string, unknown> };
+}
+interface GeminiContent { role: 'user' | 'model'; parts: GeminiPart[] }
+interface GeminiResponse {
+  candidates?: Array<{ content?: { parts?: GeminiPart[] }; finishReason?: string }>;
+  promptFeedback?: { blockReason?: string };
+  usageMetadata?: {
+    promptTokenCount?: number;
+    candidatesTokenCount?: number;
+    thoughtsTokenCount?: number;
+    cachedContentTokenCount?: number;
+  };
 }
 
-function systemInstruction(system: MessageParams['system']) {
-  if (!system) return undefined;
-  const text = typeof system === 'string' ? system : system.map((part) => part.text).join('\n');
-  return { parts: [{ text }] };
-}
+/** A tool_use block carrying the Gemini thought signature for its call. */
+type SignedBlock = { type: string; geminiSignature?: string } & Record<string, unknown>;
 
-function tools(value: MessageParams['tools']) {
-  if (!value?.length) return undefined;
-  const declarations = (value as unknown as Array<Record<string, any>>).filter((tool) =>
-    typeof tool.name === 'string' && tool.input_schema,
-  );
-  return [{ functionDeclarations: declarations.map((tool) => ({
-    name: tool.name,
-    description: tool.description,
-    parameters: Object.fromEntries(Object.entries(tool.input_schema).filter(([key]) => key !== 'additionalProperties')),
-  })) }];
-}
+/** Posts one JSON request; tests substitute a fake. */
+export type GeminiPost = (path: string, body: unknown) => Promise<unknown>;
 
 /** Longest per-minute rate-limit wait worth sitting through inside one call. */
 const MAX_WAIT_SECONDS = 65;
@@ -67,86 +55,143 @@ export function retryAfterSeconds(body: string): number | null {
   return part('h') * 3600 + part('m') * 60 + part('s');
 }
 
-async function request(apiKey: string, model: string, method: 'generateContent' | 'countTokens', body: unknown) {
-  for (let waited = 0; ; waited++) {
-    const response = await fetch(`${API}/${encodeURIComponent(model)}:${method}`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(600_000),
-    });
-    if (response.ok) return response.json() as Promise<Record<string, any>>;
-    const detail = (await response.text()).slice(0, 1200);
-    if (response.status === 429) {
-      // A per-minute limit clears in seconds: wait once or twice. A daily quota does not,
-      // and retrying only spends more of it.
-      const after = retryAfterSeconds(detail);
-      if (after !== null && after <= MAX_WAIT_SECONDS && waited < 2) {
-        await new Promise((r) => setTimeout(r, (after + 1) * 1000));
-        continue;
+export function fetchPost(apiKey: string): GeminiPost {
+  return async (path, body) => {
+    for (let waited = 0; ; waited++) {
+      const res = await fetch(`${API}/${path}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(600_000),
+      });
+      if (res.ok) return res.json();
+      const detail = (await res.text()).slice(0, 1200);
+      const message = (() => {
+        try { return (JSON.parse(detail) as { error?: { message?: string } }).error?.message ?? res.statusText; } catch { return res.statusText; }
+      })();
+      if (res.status === 429) {
+        // A per-minute limit clears in seconds: wait once or twice. A daily quota does not,
+        // and retrying only spends more of it.
+        const after = retryAfterSeconds(detail);
+        if (after !== null && after <= MAX_WAIT_SECONDS && waited < 2) {
+          await new Promise((r) => setTimeout(r, (after + 1) * 1000));
+          continue;
+        }
+        const model = /models\/([^:]+)/.exec(path)?.[1] ?? 'model';
+        const when = after === null ? 'later' : after >= 3600 ? `in about ${Math.ceil(after / 3600)} hour(s)` : `in ${Math.ceil(after / 60)} minute(s)`;
+        throw new ProviderLimitError(`Gemini ${model} quota is used up (free tier); it resets ${when}. Pick another model or use a paid key.`);
       }
-      const when = after === null ? 'later' : after >= 3600 ? `in about ${Math.ceil(after / 3600)} hour(s)` : `in ${Math.ceil(after / 60)} minute(s)`;
-      throw new ProviderLimitError(`Gemini ${model} quota is used up (free tier); it resets ${when}. Pick another model or use a paid key.`);
+      // Rejected before any work was done, so nothing was charged.
+      if (res.status === 400) throw new NotChargedError(`Gemini API 400: ${message}`);
+      throw new Error(`Gemini API ${res.status}: ${message}`);
     }
-    // Rejected before any work was done, so nothing was charged.
-    if (response.status === 400) throw new NotChargedError(`Gemini API 400: ${detail}`);
-    throw new Error(`Gemini API ${response.status}: ${detail}`);
-  }
+  };
 }
 
-/** Gemini REST transport. It adapts function calls into the block format consumed by the build loop. */
-export function geminiTransport(apiKey: string): ClaudeTransport {
+const systemText = (system: MessageParams['system']): string | undefined => {
+  if (system === undefined) return undefined;
+  if (typeof system === 'string') return system;
+  return system.map((b) => b.text).join('\n\n');
+};
+
+/** Messages-API history to Gemini contents. Thinking blocks are Claude-only and dropped. */
+export function toContents(messages: MessageParams['messages']): GeminiContent[] {
+  const toolNames = new Map<string, string>();
+  const contents: GeminiContent[] = [];
+  for (const m of messages) {
+    const role = m.role === 'assistant' ? 'model' : 'user';
+    const blocks = typeof m.content === 'string' ? [{ type: 'text', text: m.content }] : m.content;
+    const parts: GeminiPart[] = [];
+    for (const raw of blocks as unknown as SignedBlock[]) {
+      if (raw.type === 'text') {
+        parts.push({ text: String(raw.text), ...(raw.geminiSignature ? { thoughtSignature: raw.geminiSignature } : {}) });
+      } else if (raw.type === 'tool_use') {
+        toolNames.set(String(raw.id), String(raw.name));
+        parts.push({
+          functionCall: { name: String(raw.name), args: (raw.input ?? {}) as Record<string, unknown> },
+          ...(raw.geminiSignature ? { thoughtSignature: raw.geminiSignature } : {}),
+        });
+      } else if (raw.type === 'tool_result') {
+        const content = typeof raw.content === 'string'
+          ? raw.content
+          : (raw.content as Array<{ text?: string }> | undefined ?? []).map((c) => c.text ?? '').join('\n');
+        parts.push({
+          functionResponse: {
+            name: toolNames.get(String(raw.tool_use_id)) ?? 'unknown_tool',
+            response: raw.is_error ? { error: content } : { output: content },
+          },
+        });
+      }
+    }
+    if (parts.length) contents.push({ role, parts });
+  }
+  return contents;
+}
+
+function requestBody(params: MessageParams | CountParams, maxTokens?: number): Record<string, unknown> {
+  const system = systemText(params.system);
+  const tools = (params.tools ?? []) as Array<{ name: string; description?: string; input_schema?: unknown }>;
   return {
-    countTokens: async (params: CountParams) => {
-      // countTokens takes a system prompt or tools only inside a full generateContentRequest.
-      const result = await request(apiKey, params.model, 'countTokens', {
-        generateContentRequest: {
-          model: `models/${params.model}`,
-          contents: contents(params),
-          ...(params.system ? { systemInstruction: systemInstruction(params.system) } : {}),
-          ...(params.tools ? { tools: tools(params.tools) } : {}),
-        },
-      });
-      const count = result.totalTokens ?? result.total_tokens;
-      if (typeof count !== 'number') throw new Error('Gemini countTokens returned no token count');
-      return count;
+    contents: toContents(params.messages),
+    ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
+    ...(tools.length ? {
+      tools: [{
+        functionDeclarations: tools.map((t) => ({
+          name: t.name,
+          ...(t.description ? { description: t.description } : {}),
+          parametersJsonSchema: t.input_schema ?? { type: 'object', properties: {} },
+        })),
+      }],
+    } : {}),
+    ...(maxTokens ? { generationConfig: { maxOutputTokens: maxTokens } } : {}),
+  };
+}
+
+/** A Gemini response in the Messages API shape the build loop and the adapter read. */
+export function toMessage(res: GeminiResponse, model: string): ClaudeMessage {
+  const candidate = res.candidates?.[0];
+  const content: SignedBlock[] = [];
+  for (const p of candidate?.content?.parts ?? []) {
+    if (p.thought) continue;
+    const sig = p.thoughtSignature ? { geminiSignature: p.thoughtSignature } : {};
+    if (p.functionCall) {
+      content.push({ type: 'tool_use', id: `toolu_gem_${randomUUID()}`, name: p.functionCall.name, input: p.functionCall.args ?? {}, ...sig });
+    } else if (p.text !== undefined) {
+      content.push({ type: 'text', text: p.text, ...sig });
+    }
+  }
+  const finish = candidate?.finishReason ?? (res.promptFeedback?.blockReason ? 'SAFETY' : 'STOP');
+  const stop = content.some((b) => b.type === 'tool_use') ? 'tool_use'
+    : finish === 'MAX_TOKENS' ? 'max_tokens'
+    : ['SAFETY', 'RECITATION', 'BLOCKLIST', 'PROHIBITED_CONTENT', 'SPII'].includes(finish) ? 'refusal'
+    : 'end_turn';
+
+  const u = res.usageMetadata ?? {};
+  const cached = u.cachedContentTokenCount ?? 0;
+  return {
+    id: `msg_gem_${randomUUID()}`, type: 'message', role: 'assistant', model,
+    content, stop_reason: stop, stop_sequence: null,
+    usage: {
+      input_tokens: Math.max(0, (u.promptTokenCount ?? 0) - cached),
+      // Gemini bills thinking tokens at the output rate.
+      output_tokens: (u.candidatesTokenCount ?? 0) + (u.thoughtsTokenCount ?? 0),
+      cache_read_input_tokens: cached,
+      cache_creation_input_tokens: 0,
     },
-    send: async (params: MessageParams) => {
-      const result = await request(apiKey, params.model, 'generateContent', {
-        contents: contents(params),
-        ...(params.system ? { systemInstruction: systemInstruction(params.system) } : {}),
-        ...(params.tools ? { tools: tools(params.tools) } : {}),
-        generationConfig: { maxOutputTokens: params.max_tokens },
-      });
-      const candidate = result.candidates?.[0];
-      const parts = candidate?.content?.parts ?? [];
-      const content = parts.flatMap((part: Record<string, any>) => [
-        ...(typeof part.text === 'string' ? [{ type: 'text', text: part.text }] : []),
-        ...(part.functionCall ? [{
-          type: 'tool_use', id: `gemini_${crypto.randomUUID()}`,
-          name: part.functionCall.name, input: part.functionCall.args ?? {},
-          ...(typeof part.thoughtSignature === 'string' ? { thoughtSignature: part.thoughtSignature } : {}),
-        }] : []),
-      ]);
-      const usage = result.usageMetadata ?? {};
-      const promptTokens = Number(usage.promptTokenCount ?? 0);
-      const cachedTokens = Math.min(promptTokens, Number(usage.cachedContentTokenCount ?? 0));
-      const message = {
-        id: `gemini_${crypto.randomUUID()}`, type: 'message', role: 'assistant', model: params.model,
-        content,
-        stop_reason: content.some((block: { type: string }) => block.type === 'tool_use') ? 'tool_use'
-          : candidate.finishReason === 'MAX_TOKENS' ? 'max_tokens'
-          : candidate.finishReason === 'SAFETY' || candidate.finishReason === 'PROHIBITED_CONTENT' ? 'refusal'
-          : 'end_turn',
-        stop_sequence: null,
-        usage: {
-          input_tokens: promptTokens - cachedTokens,
-          output_tokens: Number(usage.candidatesTokenCount ?? 0) + Number(usage.thoughtsTokenCount ?? 0),
-          cache_read_input_tokens: cachedTokens,
-        },
-      };
-      if (!candidate) throw new Error('Gemini returned no candidate');
-      return message as unknown as ClaudeMessage;
+  } as unknown as ClaudeMessage;
+}
+
+/** The transport for Gemini models. Reads nothing from the environment; pass the key. */
+export function geminiTransport(post: GeminiPost): ClaudeTransport {
+  return {
+    countTokens: async (params) => {
+      const { contents, systemInstruction, tools } = requestBody(params);
+      const res = await post(`models/${params.model}:countTokens`, {
+        generateContentRequest: { model: `models/${params.model}`, contents, systemInstruction, tools },
+      }) as { totalTokens?: number };
+      return res.totalTokens ?? 0;
     },
+    send: async (params) =>
+      toMessage(await post(`models/${params.model}:generateContent`, requestBody(params, params.max_tokens)) as GeminiResponse, params.model),
   };
 }
