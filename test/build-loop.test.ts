@@ -140,6 +140,28 @@ test('the retry limit ends the build as failed, still logged for calibration', a
   assert.ok((await types(events)).includes('task_failed'));
 });
 
+test('a provider quota error stops the build at once and is shown in the feed', async () => {
+  const quota = new Error('Gemini API 429: You exceeded your current quota');
+  const { builder, events, sent } = await setup([quota, quota, quota, reply('end_turn')]);
+  const out = await builder.build(task());
+  assert.equal(out.status, 'failed');
+  assert.equal(out.attempts, 1);
+  assert.match(out.status === 'failed' ? out.reason : '', /provider refused the call: Gemini API 429/);
+  assert.equal(sent.length, 3); // the call and its retries, then no second attempt
+  const failed = (await events.list('proj')).find((e) => e.type === 'model_call_failed');
+  assert.match(String(failed?.payload.error), /429/);
+  assert.ok(!(await types(events)).includes('checks_run'));
+});
+
+test('a brief network error is retried as a new attempt', async () => {
+  const reset = new Error('read ECONNRESET');
+  const { builder, events } = await setup([reset, reset, reset, reply('tool_use', WRITE_OK()), reply('end_turn')]);
+  const out = await builder.build(task());
+  assert.equal(out.status, 'verified');
+  assert.equal(out.attempts, 2);
+  assert.ok((await types(events)).includes('model_call_failed'));
+});
+
 test('the retry cost limit stops new attempts', async () => {
   const { builder } = await setup([reply('end_turn')]);
   const out = await builder.build(task({ retryCostLimit: PER_CALL }));
