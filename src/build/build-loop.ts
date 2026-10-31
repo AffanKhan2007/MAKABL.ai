@@ -1,5 +1,5 @@
 import type Anthropic from '@anthropic-ai/sdk';
-import type { ClaudeAdapter, ClaudeMessage } from '../adapters/claude.ts';
+import { ProviderLimitError, type ClaudeMessage, type ModelCaller } from '../adapters/claude.ts';
 import { RunAccumulator, type CalibrationRun, type FeatureType, type RunLog } from '../calibration/runs.ts';
 import type { Micros } from '../domain/types.ts';
 import type { EventLog, EventType } from '../events/event-store.ts';
@@ -13,7 +13,7 @@ import { WorkspaceError, type Workspace } from './workspace.ts';
 // One feature, one agent: a single model works through tools on the project workspace,
 // then the platform runs its checks. Failed checks start a fresh attempt with the
 // failure report, bounded by a retry count and a retry cost (FR-21). Every model call
-// goes through the Claude adapter and so through the Budget Gate.
+// goes through a provider adapter and so through the Budget Gate.
 //
 // A budget block pauses the build and returns the approval request. Calling build()
 // again with the same task resumes it: earlier turns replay from the Gate and the tool
@@ -115,7 +115,7 @@ const TOOLS: Anthropic.Beta.Messages.BetaTool[] = [
 ];
 
 export interface FeatureBuilderDeps {
-  adapter: ClaudeAdapter;
+  adapter: ModelCaller;
   workspace: Workspace;
   verifier: Verifier;
   events: EventLog;
@@ -198,6 +198,15 @@ export class FeatureBuilder {
             if (err instanceof BudgetBlockedError) {
               // Pause, do not kill (7.4): nothing is recorded; calling build() again resumes.
               return { status: 'paused', attempts: attempt, approval: err.approval, reason: err.message };
+            }
+            if (err instanceof ProviderLimitError) {
+              // Retrying or starting a new attempt would only spend more of the quota. The run
+              // is not recorded: it says nothing about what the feature costs to build.
+              await emit('task_failed', { reason: err.message, attempts: attempt });
+              return {
+                status: 'failed', reason: err.message, attempts: attempt, checks,
+                run: run.finish({ featureType: task.featureType, attempts: attempt, verified: false }),
+              };
             }
             lastError = err;
           }

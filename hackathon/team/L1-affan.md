@@ -14,12 +14,12 @@ work together. If something is unclear about who decides, you decide.
 | # | Item | Done when |
 |---|---|---|
 | 13 | Public URL: `cloudflared` quick tunnel to `localhost:3000` | A link opens the app in a private window on a phone |
-| 17 | Relay execution: spec → architect → build → review, each on its own model, passing a brief | A simulated run shows every phase and each handoff brief |
-| 18 | Token negotiator: per-phase budgets from the cap; a phase asks for more with a reason | One negotiation is visible in the feed: granted, moved from another phase, or escalated |
-| 19 | Relay timeline UI on the project page | Model per phase, tokens against budget, briefs, tokens saved |
+| 17 | Relay execution: spec → architect → build → review, each on its own model, passing a brief | **Done.** Ran live on Gemini; every phase and brief in the timeline |
+| 18 | Token negotiator: per-phase budgets from the cap; a phase asks for more with a reason | **Done.** Grant, reassign, escalate and return, each recorded and shown in the timeline |
+| 19 | Relay timeline UI on the project page | **Done.** Model per phase, spend against allowance, briefs, negotiator, reviews |
 | — | Merging everyone's branches into `main` | `npm test` passes after every merge |
 
-Already done this weekend: multi-vendor prices (59 models), what-if explorer, conflicts panel,
+Already done this weekend: multi-vendor prices (57 models), what-if explorer, conflicts panel,
 Easy mode and Pro mode.
 
 ## Things only you can do (do these first)
@@ -56,5 +56,5 @@ Sync every two hours (13:00, 15:00, 17:00, 19:00, 21:00, 23:00, 01:00), ten minu
 
 - Short branches, merged through you. No direct pushes to `main` from other laptops.
 - No secrets in the repo: keys go in `.env.local`, which git ignores. The repo is public.
-- Simulated builds are labelled on screen. A live build is shown only if it really ran.
+- Only claim live runs that happened (see the honesty rule in `plan.md`).
 - Stuck 30 minutes on one thing: switch approach or cut it.

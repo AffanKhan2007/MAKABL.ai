@@ -88,20 +88,21 @@ export async function approvePlanAction(projectId: string, form: FormData): Prom
 const canStart = (state: string, projectId: string) =>
   state === 'approved' || state === 'paused' || (state === 'building' && !isRunning(projectId));
 
-export async function startBuildAction(projectId: string): Promise<void> {
+export async function startBuildAction(projectId: string, form: FormData): Promise<void> {
   const project = await getProject(projectId);
   if (!project) return back(projectId, 'Project not found.');
+  if (project.buildMode !== 'live') return back(projectId, 'This project was created in simulated mode. Switch it to live mode first.');
+  if (form.get('confirm') !== 'yes') return back(projectId, 'Confirm that real model calls may incur charges and generated code will run on this computer.');
   if (!canStart(project.state, projectId)) return back(projectId, 'Approve the cost plan before building.');
   if ((await (await gate()).pendingApprovals(projectId)).length > 0) {
     return back(projectId, 'Decide the pending approval first.');
   }
-  if (project.buildMode === 'live' && !liveModeStatus().available) {
+  const provider = registry.get(project.spec.buildModel).provider;
+  if (!liveModeStatus(process.env, provider).available) {
     return back(projectId, 'Live builds are not enabled on this server.');
   }
-  if (project.buildMode === 'live') {
-    const blocked = liveBlocker(registry.get(project.spec.buildModel).provider);
-    if (blocked) return back(projectId, `Cannot build live on ${modelLabel(project.spec.buildModel)}: ${blocked}.`);
-  }
+  const blocked = liveBlocker(provider);
+  if (blocked) return back(projectId, `Cannot build live on ${modelLabel(project.spec.buildModel)}: ${blocked}.`);
   startBuild(projectId, await currentUserId());
   revalidatePath(`/projects/${projectId}`);
   back(projectId);
@@ -129,22 +130,24 @@ export async function decideApprovalAction(projectId: string, approvalId: string
 }
 
 /**
- * Switch between simulated and live builds. Only before any build spend, so a project's
- * ledger never mixes simulated and real charges. Going live needs the server enabled
+ * Upgrade a legacy simulated project to live builds. Only before any build spend, so a
+ * project's ledger never mixes simulated and real charges. Going live needs the server enabled
  * for it and an explicit confirmation.
  */
 export async function setBuildModeAction(projectId: string, form: FormData): Promise<void> {
   const project = await getProject(projectId);
   if (!project) return back(projectId, 'Project not found.');
-  const mode = form.get('mode') === 'live' ? 'live' : 'simulated';
+  if (form.get('mode') !== 'live') return back(projectId, 'Simulated builds are no longer available.');
+  const mode = 'live';
   if (mode === project.buildMode) return back(projectId);
   if (isRunning(projectId) || (await (await gate()).ledgerFor(projectId).catch(() => [])).length > 0) {
     return back(projectId, 'The build mode can only change before the build has spent anything. Start a new project instead.');
   }
   if (mode === 'live') {
-    if (!liveModeStatus().available) return back(projectId, 'Live builds are not enabled on this server.');
+    const provider = registry.get(project.spec.buildModel).provider;
+    if (!liveModeStatus(process.env, provider).available) return back(projectId, 'Live builds are not enabled on this server.');
     if (form.get('confirm') !== 'yes') {
-      return back(projectId, 'Tick the box to confirm that live builds spend real money and run generated code on this computer.');
+      return back(projectId, 'Tick the box to confirm live API use may incur charges and generated code runs on this computer.');
     }
   }
   await setBuildMode(projectId, mode);

@@ -1,7 +1,13 @@
 import Anthropic from '@anthropic-ai/sdk';
 import type { RunAccumulator } from '../calibration/runs.ts';
 import type { CostBasis, Micros } from '../domain/types.ts';
-import type { BudgetGate } from '../gate/budget-gate.ts';
+import { NotChargedError, type BudgetGate } from '../gate/budget-gate.ts';
+
+/**
+ * The provider's quota or rate limit is used up for longer than is worth waiting. Retrying
+ * only spends more of it, so the build stops and says when to try again.
+ */
+export class ProviderLimitError extends NotChargedError {}
 import { observedLlmCost, worstCaseLlmCost, type CacheWrite, type LlmUsage } from '../gate/llm-cost.ts';
 import { tokenRatesFor, type PriceEntry, type PricingRegistry } from '../registry/pricing.ts';
 
@@ -59,6 +65,11 @@ export interface ClaudeCall {
   run?: RunAccumulator;
 }
 
+/** Anything that can make a budgeted model call: an adapter, or the relay's negotiating caller. */
+export interface ModelCaller {
+  call(c: ClaudeCall): Promise<ClaudeMessage>;
+}
+
 export interface PricedUsage {
   cost: Micros;
   basis: CostBasis;
@@ -79,18 +90,18 @@ const hasTokens = (e: unknown): e is UsageEntry =>
  * Price a response. usage.iterations is the per-attempt source of truth when present;
  * the top-level usage covers only the attempt that produced the returned message.
  */
-export function priceMessage(msg: ClaudeMessage, requested: PriceEntry, registry: PricingRegistry): PricedUsage {
+export function priceMessage(msg: ClaudeMessage, requested: PriceEntry, registry: PricingRegistry, provider = 'anthropic'): PricedUsage {
   const iterations: unknown[] = msg.usage.iterations ?? [];
   const entries: UsageEntry[] = iterations.length
     ? iterations.filter(hasTokens)
     : [{ ...(msg.usage as LlmUsage), model: msg.model }];
 
-  const priciest = maxRatePrice(registry, requested.provider);
+  const priciest = maxRatePrice(registry, provider);
   const attempts: PricedUsage['attempts'] = [];
   const unknownModels: string[] = [];
   for (const e of entries) {
     const apiModel = e.model ?? requested.product;
-    const known = registry.find(`${requested.provider}/${apiModel}`);
+    const known = registry.find(`${provider}/${apiModel}`);
     if (!known) unknownModels.push(apiModel);
     const price = known ?? priciest;
     attempts.push({ model: price.id, usage: e, cost: observedLlmCost(price, e) });
@@ -103,23 +114,25 @@ export function priceMessage(msg: ClaudeMessage, requested: PriceEntry, registry
   };
 }
 
-/** The provider's entry with the highest output rate: a ceiling for an unknown model. */
+/** The Claude entry with the highest output rate: a ceiling for an unknown Claude model. */
 function maxRatePrice(registry: PricingRegistry, provider: string): PriceEntry {
   const llms = registry.llms().filter((p) => p.provider === provider);
-  if (!llms.length) throw new Error('registry has no LLM prices');
+  if (!llms.length) throw new Error(`registry has no ${provider} LLM prices`);
   return llms.reduce((a, b) =>
     (tokenRatesFor(b, 0).outputPerMTok > tokenRatesFor(a, 0).outputPerMTok ? b : a));
 }
 
-export class ClaudeAdapter {
+export class ClaudeAdapter implements ModelCaller {
   private readonly gate: BudgetGate;
   private readonly registry: PricingRegistry;
   private readonly transport: ClaudeTransport;
+  private readonly provider: string;
 
-  constructor(gate: BudgetGate, registry: PricingRegistry, transport: ClaudeTransport) {
+  constructor(gate: BudgetGate, registry: PricingRegistry, transport: ClaudeTransport, provider = 'anthropic') {
     this.gate = gate;
     this.registry = registry;
     this.transport = transport;
+    this.provider = provider;
   }
 
   /** Worst case for a request: one attempt, plus a fallback attempt where fallbacks are on. */
@@ -134,7 +147,7 @@ export class ClaudeAdapter {
     const price = this.registry.get(c.model);
     if (price.category !== 'llm') throw new Error(`${c.model} is not a model`);
     const cache = c.cache ?? '5m';
-    const fallbacks = DEFAULT_FALLBACK_MODELS.has(price.product);
+    const fallbacks = this.provider === 'anthropic' && DEFAULT_FALLBACK_MODELS.has(price.product);
 
     const params: MessageParams = {
       model: price.product,
@@ -171,10 +184,10 @@ export class ClaudeAdapter {
           sent = await this.transport.send(params);
         } catch (err) {
           // The Gate books the worst case for a failed call; the run carries the same.
-          c.run?.addCharge(price.id, worstCase);
+          if (!(err instanceof NotChargedError)) c.run?.addCharge(price.id, worstCase);
           throw err;
         }
-        const priced = priceMessage(sent, price, this.registry);
+        const priced = priceMessage(sent, price, this.registry, this.provider);
         return { result: sent, observed: priced.cost, basis: priced.basis };
       },
     );
@@ -182,7 +195,7 @@ export class ClaudeAdapter {
     // still counts toward its feature's run. Pricing is deterministic from usage, so
     // this matches what the Gate booked.
     if (c.run) {
-      for (const a of priceMessage(msg, price, this.registry).attempts) c.run.add(a.model, a.usage, a.cost);
+      for (const a of priceMessage(msg, price, this.registry, this.provider).attempts) c.run.add(a.model, a.usage, a.cost);
     }
     return msg;
   }

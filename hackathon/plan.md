@@ -61,8 +61,14 @@ Rubric fit (to re-check once the real criteria arrive):
    **opens**. *(15s)*
 7. Close: estimate vs actual per phase, and the verification report. *(10s)*
 
-Honesty rule: simulated builds are labelled on screen. A live (real Claude) build is shown
-only if the spike succeeds, and its cost is real.
+Honesty rule: there is no simulated build any more; every build calls a real model. What ran
+live (1 Nov): the relay on Gemini's free tier, with spec and architect briefs, handoffs and
+negotiator decisions recorded. What has not: a generated app passing every check end to end
+(free-tier quota), and OpenAI or Claude live calls (no paid keys). Say exactly this.
+
+Free-tier warning: Gemini 3.6 Flash allows 20 requests a day and the quota resets around
+13:30 IST, after the event ends. Do not spend it on practice; record one good run as the
+fallback video.
 
 ## Team: 4 people, 4 laptops (no VM)
 
@@ -87,8 +93,8 @@ say so if a judge asks.
    cannot go on Vercel serverless as is. Plan: a Cloudflare quick tunnel from L1 to
    `localhost:3000`, which needs no account and gives a public `https` link. (#13)
 
-If #1 fails or costs too much: demo the simulated build (labelled), show the live-build code
-path and one recorded real run. If #13 fails: demo from L1, say so, keep the video.
+If a live build fails on stage: show the recorded relay run (timeline, briefs, negotiator)
+and say why. If #13 fails: demo from L1, say so, keep the video.
 
 ## Schedule
 

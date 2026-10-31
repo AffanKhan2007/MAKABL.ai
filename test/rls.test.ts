@@ -142,6 +142,16 @@ describe('row-level security', { skip: ready ? false : 'no database with db/role
     await assert.rejects(new PgToolLog(admin, projectA, asB).put('t:a1:t1:toolu_2', { content: 'x', isError: false }), /row-level security/);
   });
 
+  test('model and test-runner text outside Windows-1252 is stored intact', async () => {
+    // Test runners print ✖ and models write arrows and emoji; a WIN1252 database rejects them.
+    const asA = { role: APP_ROLE, userId: userA };
+    const text = '✖ 1 failing → fix ✓ 🚀';
+    await new PgToolLog(admin, projectA, asA).put('t:a1:t1:toolu_utf8', { content: text, isError: true });
+    assert.equal((await new PgToolLog(admin, projectA, asA).get('t:a1:t1:toolu_utf8'))?.content, text);
+    const e = await new PgEventLog(admin, asA).append({ projectId: projectA, taskId: null, type: 'relay_review', payload: { review: text } });
+    assert.equal(e.payload.review, text);
+  });
+
   test('child tables without a project_id are isolated through their parent', async () => {
     const { rows } = await admin.query<{ id: string }>(
       `insert into artifacts (project_id, kind, path) values ($1, 'code', 'a.ts'), ($2, 'code', 'b.ts') returning id`,

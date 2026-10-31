@@ -1,97 +1,130 @@
 # MAKABL
 
-Cost-planned, budget-gated AI builds for small web apps. Before an AI builds the app, MAKABL
-shows a ranged cost plan (free path vs paid path) and enforces a spending cap, pausing to ask
-before any paid action. See `docs/working-model-and-requirements.md` (the plan) and
-`docs/research-critique.md` (the evidence behind it).
+**An economy of AI models that builds your web app and pays its own way, inside a budget you set.**
 
-## Try the app
+You describe an app. MAKABL plans what it will cost before anything is spent, then runs the
+build as a **relay of AI models from different vendors**: a cheap model writes the spec, a
+strong one designs, a builder writes and checks the code, and a reviewer reads the result.
+Each model gets an **allowance carved from your cap**. When one needs more, a **token
+negotiator** grants it from slack, moves spare budget from another phase, or escalates to the
+**Budget Gate**, which stops and asks you before your cap could be crossed.
 
-Requires Node 23.6+. From the project folder:
+Built for the **auto-economy track**: agents with their own budgets, a market for who does
+which job, and hard money controls a person can trust.
+
+| Plain words | What it does |
+|---|---|
+| **Know the price first** | A ranged estimate for building (and running) the app, per phase and per model, across 57 models from Anthropic, OpenAI and Google, from their official price lists |
+| **Right model for each job** | Spec, architect, build and review each run on their own model; a finishing model hands the next a short brief, not its whole history |
+| **Models negotiate for tokens** | Per-phase allowances from the cap; grant, reassign or escalate, every decision on the record |
+| **Never over budget** | Every call reserves its worst case first; the build pauses for approval before a cap could be crossed |
+| **See the catch** | Conflicts and shortcomings beside the numbers: price rises, preview models, free tiers, cheap builders that retry more |
+| **Two ways in** | **Easy mode** (plain words, three choices) and **Pro mode** (every model, phase, token and number) |
+
+## What is real today
+
+Honest status, as of 1 Nov 2026:
+
+| Piece | State |
+|---|---|
+| Cost estimator: per phase, per model, ranges, free vs paid path, what-if explorer | Working. Ranges come from modelled priors until 10+ real runs per feature type are logged; the app says so |
+| Relay execution: spec → architect → build → review with handoff briefs | **Ran live on Gemini (free tier).** Spec and architect briefs, handoffs (32% and 44% fewer tokens than the full history), and negotiator decisions are recorded in the event log |
+| Token negotiator | Working and tested; live run returned unspent allowance from the spec and architect phases |
+| Budget Gate: reserve, settle, caps, approvals, replay after restart | Working and tested |
+| Gemini adapter | Live-tested. Free-tier quotas are small (20 requests/day for Gemini 3.6 Flash), so a full build may need a paid key |
+| Claude adapter | Implemented and tested with a fake transport; needs an Anthropic API key with credit for a live run |
+| OpenAI / OpenRouter adapter | Implemented and tested with a mocked API; **not yet run live** (no key) |
+| A generated app passing all checks end to end | Not yet on the free tier: one run's checks failed with the smallest model, the next ran out of free quota |
+| Sandbox for generated code | None: it runs on the build machine. Do not run builds on a machine with personal data |
+
+## Try it
+
+Requires Node 23.6+ (Node 24 recommended) and git.
 
 ```bash
+git clone https://github.com/AffanKhan2007/MAKABL.ai.git
+cd MAKABL.ai
 npm install
-npm run db:local    # start Postgres 17 (no Docker needed); keeps running until db:local:stop
-npm run db:reset    # create the app's tables (first time only; wipes the app's local data)
-npm run dev         # then open http://localhost:3000 and create an account
+npm run db:local    # Postgres 17, no Docker needed
+npm run db:reset    # create the tables (first time only; wipes local data)
+npm run db:seed     # optional: a local development account
+npm run dev         # open http://localhost:3000
 ```
 
-`npm run db:seed` creates a local development account instead (see
-`scripts/seed-dev-user.ts`; local databases only).
+On Windows, double-click **Launch MAKABL.bat**: it starts the database, creates the tables
+if they are missing (without wiping data) and opens the app.
 
-1. **New project**: describe the app and its features (pre-filled with an example). Each
-   feature has acceptance criteria: sensible defaults per type, or your own.
-2. **Cost plan**: free vs paid path, each line with its range and confidence.
-3. **Approve**: set the caps. Try a low cap (for example $1) to see the Budget Gate pause the build.
-4. **Start build**: watch the live feed. When the Gate pauses it, approve a raise to resume.
-   If the server stops mid-build, the page offers **Resume build**; finished steps replay free.
-5. **Review**: estimate vs actual per feature, and a verification report that lists what
-   was checked, who wrote the tests, and what was not checked.
-6. **Change the spec**: saving creates a new version, shows what changed and the cost
-   difference, and needs approval again. Only changed or new features are rebuilt.
-7. **Export** the project as a zip, or **delete** it with everything recorded about it.
+Without any API key you can use everything except a live build: Easy and Pro modes, the cost
+plan, the 57-model what-if explorer, the conflicts panel and the relay timeline's plan.
 
-New projects build in **simulated** mode: a scripted stand-in plays the model, so no API
-key is needed, nothing is spent, and simulated runs never feed the cost estimates. Every
-query for a signed-in user runs under row-level security.
+### Live builds
 
-### Live builds (real Claude, real money)
-
-A live build has Claude write the app on a Next.js starter project, runs the type check,
-tests and production build on it, and records each feature's real cost so estimates
-improve. It is off until you turn it on:
-
-1. Copy `.env.example` to `.env.local` and set `ANTHROPIC_API_KEY`.
+1. Copy `.env.example` to `.env.local` and set at least one key:
+   - `GEMINI_API_KEY`: has a free tier (Google may use free-tier prompts to improve its products)
+   - `ANTHROPIC_API_KEY`: Claude models
+   - `OPENAI_API_KEY` or `OPENROUTER_API_KEY`: OpenAI models
 2. Set `MAKABL_ALLOW_UNSANDBOXED_BUILDS=1`. Generated code (npm install, tests, next build)
-   runs on this computer **without a sandbox**; only set this if you accept that.
-3. Restart `npm run dev`. On a new project, before building, use **Switch to live build**
-   and tick the confirmation. Keep the caps low for the first runs.
+   runs on this computer **without a sandbox**; only set it if you accept that.
+3. Restart, create a project, set a low limit (for example $2), tick the confirmation, start.
 
-The API key stays in the server process; generated code runs with a stripped environment
-and never sees it.
+A relay phase whose vendor has no key runs on the build model instead, and the timeline says
+so. Keys stay in the server process; generated code runs with a scrubbed environment.
 
-## Status
+## How it works
 
-| Piece | File | State |
-|---|---|---|
-| Web app | `app/`, `src/server/` | Accounts, intake with acceptance criteria, cost plan, approvals, change requests, simulated and live builds, live feed, estimate vs actual, verification report, export, delete. Every query runs as `makabl_app` under RLS |
-| Accounts | `src/auth/`, `proxy.ts` | Email and password (scrypt), httpOnly session cookie, only the token's hash stored, throttled sign-in |
-| MVP schema (section 8) | `db/schema.sql`, `db/roles.sql` | Postgres 17, RLS on every tenant table including child tables |
-| Pricing registry + seed | `src/registry/` | Verified against official pages on 2026-10-27; recheck by 2027-01-27, after which prices show as assumptions |
-| Estimator (7.2, 7.3) | `src/estimator/estimator.ts` | Probe x logged ratios, P10/P50/P90 of logged runs (10+), or a cached agent-loop prior; Vercel usage from traffic; commercial-use gate; track record |
-| Budget Gate (7.4) | `src/gate/` | Reserve then settle, task/project/monthly caps, idempotency keys, approvals with who decided, recovery of calls cut off by a restart |
-| Claude adapter | `src/adapters/claude.ts` | Every call through the Gate; worst case includes a refusal fallback; each attempt priced at its own model. Not yet run against the live API |
-| Build loop (P2) | `src/build/` | One agent per feature, confined workspace, platform checks, bounded retries, pause/resume by replay (tool log in Postgres), calibration run per feature |
-| Starter template | `src/build/template.ts` | Next.js 16.4.3 + TypeScript + node:test; install, type check, tests and build verified to pass |
+```
+idea ──► Estimator ──► plan (ranges, per phase, per model) ──► you approve a cap
+                                                                    │
+            ┌──────────────────────── Negotiator (allowance per phase, slack) ─┐
+            ▼                                                                   │
+  Spec model ──brief──► Architect model ──brief──► Builder (per feature) ──► Reviewer
+      │                      │                          │  tools + checks       │
+      └──────────────────────┴──────── every call ──────┴───────────────────────┘
+                                         ▼
+                         Budget Gate: reserve worst case → call → settle
+                         (pauses for approval before a cap is crossed)
+```
+
+| Part | Where |
+|---|---|
+| Pricing registry: 57 models + hosting, database, git | `src/registry/models.ts`, `src/registry/seed.ts` |
+| Estimator and conflicts | `src/estimator/estimator.ts`, `src/estimator/conflicts.ts` |
+| Relay and negotiator | `src/relay/relay.ts`, `src/relay/negotiator.ts`, orchestration in `src/server/builds.ts` |
+| Budget Gate | `src/gate/` |
+| Provider adapters | `src/adapters/claude.ts`, `gemini.ts`, `openai.ts` |
+| Build loop: tools, confined workspace, checks, retries | `src/build/` |
+| Web app: Easy/Pro, what-if, timeline, feed | `app/` |
+| Schema with row-level security | `db/schema.sql`, `db/roles.sql` |
+
+Design documents: `docs/working-model-and-requirements.md` (the plan) and
+`docs/research-critique.md` (the evidence). OpenRouter design: `hackathon/openrouter.md`.
 
 ## Development
 
 ```bash
-npm run db:reset:test   # create the tests' own database (makabl_test); first time only
-npm test                # all suites; Postgres suites skip if makabl_test is missing
+npm run db:reset:test   # the tests' own database (makabl_test), first time only
+npm test                # 147 tests; none call a real API
 npm run typecheck
-npm run build           # Next.js production build
-npm run demo            # terminal walk-through of the cost plan and a forced pause
-npm run db:up           # alternative: Postgres in Docker (needs Docker Desktop + WSL)
+npm run build
 ```
 
-Tests never touch the app's database: they write calibration runs, and the app's
-estimates must only learn from real builds.
+Tests never touch the app's database, so test runs never train the estimator. Databases are
+created as UTF-8 (on Windows, Postgres otherwise defaults to WIN1252 and rejects characters
+that models and test runners print).
 
 ### Postgres notes
 
-- Row-level security does not apply to superusers or table owners. The app connects as
-  the login role and switches to `makabl_app` per transaction (`src/db/scope.ts`).
+- Row-level security does not apply to superusers or table owners. The app connects as the
+  login role and switches to `makabl_app` per transaction (`src/db/scope.ts`).
 - NOTIFY ignores RLS: every listener gets every project's events. The feed filters by
   project before anything reaches a browser.
 
 ## Next
 
 1. A real sandbox for generated code (container: no network or secrets, CPU/memory limits).
-2. First live builds, then 10+ runs per feature type so estimates stop using priors.
-3. Preview and production deploys to Vercel with approval (gate G5).
-4. Accounts for real users: email verification, password reset, optionally a sign-in
-   provider; a shared rate limit instead of the per-process one.
-5. Check Supabase and GitHub commercial-use terms (only Vercel's were verified).
+2. Paid-key live runs on every vendor, then 10+ runs per feature type so estimates stop using priors.
+3. Models that ask the negotiator themselves, through a tool, with their own reason.
+4. Preview and production deploys with approval.
+5. Email verification and password reset.
 
-P0 (8 to 10 user interviews, with a commitment ask) is still open and is not a code task.
+Team: Affan, Nishant, Sanjana, Shuja.

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type Anthropic from '@anthropic-ai/sdk';
-import type { ClaudeMessage, ClaudeTransport } from './claude.ts';
+import { NotChargedError } from '../gate/budget-gate.ts';
+import { ProviderLimitError, type ClaudeMessage, type ClaudeTransport } from './claude.ts';
 
 // Gemini transport: lets the Claude adapter, and so the Budget Gate, drive a Gemini model.
 // The build loop speaks the Messages API shape; this translates each request to the
@@ -41,16 +42,49 @@ type SignedBlock = { type: string; geminiSignature?: string } & Record<string, u
 /** Posts one JSON request; tests substitute a fake. */
 export type GeminiPost = (path: string, body: unknown) => Promise<unknown>;
 
+/** Longest per-minute rate-limit wait worth sitting through inside one call. */
+const MAX_WAIT_SECONDS = 65;
+
+/** Seconds Gemini asks us to wait, from RetryInfo or the "retry in 1h2m3s" text. */
+export function retryAfterSeconds(body: string): number | null {
+  const delay = /"retryDelay":\s*"([\d.]+)s"/.exec(body);
+  if (delay) return Number(delay[1]);
+  const text = /retry in ((?:\d+h)?(?:\d+m)?(?:[\d.]+s)?)/i.exec(body)?.[1];
+  if (!text) return null;
+  const part = (unit: string) => Number(new RegExp(`([\\d.]+)${unit}`).exec(text)?.[1] ?? 0);
+  return part('h') * 3600 + part('m') * 60 + part('s');
+}
+
 export function fetchPost(apiKey: string): GeminiPost {
   return async (path, body) => {
-    const res = await fetch(`${API}/${path}`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
-      body: JSON.stringify(body),
-    });
-    const json = await res.json().catch(() => ({})) as { error?: { message?: string } };
-    if (!res.ok) throw new Error(`Gemini API ${res.status}: ${json.error?.message ?? res.statusText}`);
-    return json;
+    for (let waited = 0; ; waited++) {
+      const res = await fetch(`${API}/${path}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(600_000),
+      });
+      if (res.ok) return res.json();
+      const detail = (await res.text()).slice(0, 1200);
+      const message = (() => {
+        try { return (JSON.parse(detail) as { error?: { message?: string } }).error?.message ?? res.statusText; } catch { return res.statusText; }
+      })();
+      if (res.status === 429) {
+        // A per-minute limit clears in seconds: wait once or twice. A daily quota does not,
+        // and retrying only spends more of it.
+        const after = retryAfterSeconds(detail);
+        if (after !== null && after <= MAX_WAIT_SECONDS && waited < 2) {
+          await new Promise((r) => setTimeout(r, (after + 1) * 1000));
+          continue;
+        }
+        const model = /models\/([^:]+)/.exec(path)?.[1] ?? 'model';
+        const when = after === null ? 'later' : after >= 3600 ? `in about ${Math.ceil(after / 3600)} hour(s)` : `in ${Math.ceil(after / 60)} minute(s)`;
+        throw new ProviderLimitError(`Gemini ${model} quota is used up (free tier); it resets ${when}. Pick another model or use a paid key.`);
+      }
+      // Rejected before any work was done, so nothing was charged.
+      if (res.status === 400) throw new NotChargedError(`Gemini API 400: ${message}`);
+      throw new Error(`Gemini API ${res.status}: ${message}`);
+    }
   };
 }
 

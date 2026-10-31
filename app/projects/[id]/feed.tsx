@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
-import { money } from '../../format.ts';
+import { fineMoney, money } from '../../format.ts';
 
 // Live feed (FR-27). Every line comes from the activity_events table via server-sent
 // events; nothing here is model narration.
@@ -20,7 +20,10 @@ const REFRESH_ON = new Set([
   'task_paused', 'task_resumed', 'task_verified', 'task_failed', 'task_refused',
   'approval_requested', 'approval_decided', 'budget_settled', 'build_mode_changed',
   'checks_run', 'project_checks_run',
+  'relay_phase_started', 'relay_phase_finished', 'relay_handoff', 'relay_review', 'negotiation',
 ]);
+
+const short = (model: unknown) => String(model).split('/')[1] ?? String(model);
 
 const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
 
@@ -33,9 +36,9 @@ function describe(e: FeedEvent): string {
   switch (e.type) {
     case 'task_started': return `${task}started "${p.feature}" (${p.featureType})`;
     case 'attempt_started': return `${task}attempt ${p.attempt}`;
-    case 'budget_reserved': return `${task}reserved ${money(num(p.worstCase))} (worst case)`;
-    case 'budget_settled': return `${task}model call cost ${money(num(p.observed))}`;
-    case 'budget_overshoot': return `${task}call cost ${money(num(p.by))} more than reserved`;
+    case 'budget_reserved': return `${task}reserved ${fineMoney(num(p.worstCase))} (worst case)`;
+    case 'budget_settled': return `${task}model call cost ${fineMoney(num(p.observed))}`;
+    case 'budget_overshoot': return `${task}call cost ${fineMoney(num(p.by))} more than reserved`;
     case 'budget_blocked': return `${task}blocked: ${p.check} would be exceeded (${money(num(p.used))} committed + ${money(num(p.worstCase))} > ${money(num(p.cap))})`;
     case 'task_paused': return `${task}paused, waiting for your approval`;
     case 'approval_requested': return `approval requested: ${p.reason}`;
@@ -53,6 +56,13 @@ function describe(e: FeedEvent): string {
     case 'build_mode_changed': return `build mode set to ${p.mode}`;
     case 'spec_changed': return `spec changed to v${p.toVersion}; plan needs approval again`;
     case 'project_checks_run': return `whole-project checks ${p.passed ? 'passed' : 'failed'}`;
+    case 'relay_budget': return `negotiator split the ${money(num(p.cap))} cap between the phases`;
+    case 'relay_phase_started': return `${p.phase} phase started on ${short(p.model)}`;
+    case 'relay_phase_finished': return `${p.phase} phase finished, spent ${money(num(p.spent))}`;
+    case 'relay_handoff': return `${p.from} handed ${p.to} a ${(num(p.briefTokens) / 1000).toFixed(1)}K-token brief instead of ${(num(p.historyTokens) / 1000).toFixed(1)}K of history`;
+    case 'relay_substituted': return `${p.phase} ran on ${short(p.used)} instead of ${short(p.planned)}: ${p.reason}`;
+    case 'relay_review': return `review of "${p.feature}": ${p.verdict ?? 'no verdict'}`;
+    case 'negotiation': return `negotiator: ${p.phase} ${p.outcome} ${money(num(p.amount))}${p.from ? ` from ${p.from}` : ''}`;
     default: return `${task}${e.type}`;
   }
 }
@@ -65,6 +75,10 @@ function toneOf(e: FeedEvent): string {
     case 'budget_blocked': case 'task_paused': case 'approval_requested': return 't-warn';
     case 'task_failed': case 'task_refused': case 'budget_overshoot': case 'model_call_failed': return 't-bad';
     case 'tool_executed': return e.payload.isError ? 't-bad' : 't-accent';
+    case 'relay_handoff': case 'relay_phase_started': return 't-accent';
+    case 'relay_review': return e.payload.verdict === 'concerns' ? 't-warn' : 't-good';
+    case 'negotiation': return e.payload.outcome === 'escalated' ? 't-warn' : 't-accent';
+    case 'relay_substituted': return 't-warn';
     default: return '';
   }
 }

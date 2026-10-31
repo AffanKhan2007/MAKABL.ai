@@ -44,9 +44,8 @@ create table projects (
   name           text not null,
   state          project_state not null default 'draft',
   commercial_use boolean not null default true,  -- D11: gate free tiers on commercial use
-  -- 'simulated' builds use a scripted model: no API calls, no real money, and their
-  -- runs are never written to calibration_runs.
-  build_mode     text not null default 'simulated' check (build_mode in ('simulated', 'live')),
+  -- 'simulated' remains only to identify historical projects; new projects use live.
+  build_mode     text not null default 'live' check (build_mode in ('simulated', 'live')),
   created_at     timestamptz not null default now()
 );
 

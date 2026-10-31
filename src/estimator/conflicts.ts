@@ -237,7 +237,7 @@ export function findConflicts(
           id: `live-${phase}`, severity: 'block', phase,
           title: `The ${phase} phase cannot run live on ${short(modelOf[phase])}`,
           detail: reason,
-          fix: 'Pick a model whose vendor is set up, or build in simulated mode',
+          fix: 'Pick a model whose provider adapter and API key are configured',
         });
       }
     }

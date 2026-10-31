@@ -80,3 +80,28 @@ test('a Gemini key enables live builds for Gemini models only', () => {
   assert.equal(liveModeStatus(env).available, true);
   assert.ok(!liveModeStatus({ GEMINI_API_KEY: 'secret-g' }, 'google').missing.join(' ').includes('secret-g'));
 });
+
+test('reads how long Gemini asks to wait, from RetryInfo or the message text', async () => {
+  const { retryAfterSeconds } = await import('../src/adapters/gemini.ts');
+  assert.equal(retryAfterSeconds('{"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay": "37s"}'), 37);
+  assert.equal(retryAfterSeconds('Please retry in 18h39m57.9s.'), 18 * 3600 + 39 * 60 + 57.9);
+  assert.equal(retryAfterSeconds('no hint here'), null);
+});
+
+test('a used-up daily quota raises ProviderLimitError at once, without waiting or retrying', async () => {
+  const { fetchPost } = await import('../src/adapters/gemini.ts');
+  const { ProviderLimitError } = await import('../src/adapters/claude.ts');
+  const original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = (async () => {
+    calls++;
+    return new Response('{"error":{"code":429,"message":"Quota exceeded ... Please retry in 18h39m57.9s."}}', { status: 429 });
+  }) as typeof fetch;
+  try {
+    await assert.rejects(fetchPost('k')('models/gemini-3.6-flash:generateContent', {}),
+      (err: unknown) => err instanceof ProviderLimitError && /gemini-3\.6-flash quota is used up.*about 19 hour/.test((err as Error).message));
+    assert.equal(calls, 1);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
