@@ -20,7 +20,29 @@ export interface OpenAiEndpoint {
   /** Registry product → the endpoint's model id. */
   modelId(product: string): string;
   label: string;
+  /** What the endpoint calls the output limit; OpenAI's newer name by default. */
+  maxTokensParam?: 'max_tokens' | 'max_completion_tokens';
 }
+
+/** Groq: OpenAI-compatible, free tier with daily request limits. */
+export const groq = (apiKey: string): OpenAiEndpoint => ({
+  url: 'https://api.groq.com/openai/v1/chat/completions', apiKey, modelId: (p) => p, label: 'Groq',
+});
+
+/** Mistral's La Plateforme: free "Experiment" tier; takes max_tokens. */
+export const mistral = (apiKey: string): OpenAiEndpoint => ({
+  url: 'https://api.mistral.ai/v1/chat/completions', apiKey, modelId: (p) => p, label: 'Mistral', maxTokensParam: 'max_tokens',
+});
+
+/** OpenRouter's free models, which have ":free" ids. Registry products → OpenRouter ids. */
+const OPENROUTER_FREE: Record<string, string> = {
+  'gpt-oss-120b-free': 'openai/gpt-oss-120b:free',
+  'qwen3-coder-free': 'qwen/qwen3-coder:free',
+};
+export const openRouterFree = (apiKey: string): OpenAiEndpoint => ({
+  url: 'https://openrouter.ai/api/v1/chat/completions', apiKey, label: 'OpenRouter', maxTokensParam: 'max_tokens',
+  modelId: (p) => OPENROUTER_FREE[p] ?? p,
+});
 
 export const openAiDirect = (apiKey: string): OpenAiEndpoint => ({
   url: 'https://api.openai.com/v1/chat/completions', apiKey, modelId: (p) => p, label: 'OpenAI',
@@ -108,7 +130,7 @@ export function openAiTransport(endpoint: OpenAiEndpoint): ClaudeTransport {
         model: endpoint.modelId(params.model),
         messages: chatMessages(params),
         ...(tools ? { tools } : {}),
-        max_completion_tokens: params.max_tokens,
+        [endpoint.maxTokensParam ?? 'max_completion_tokens']: params.max_tokens,
       });
       const choice = result.choices?.[0];
       if (!choice) throw new Error(`${endpoint.label} returned no choice`);
@@ -134,6 +156,14 @@ export function openAiTransport(endpoint: OpenAiEndpoint): ClaudeTransport {
       } as unknown as ClaudeMessage;
     },
   };
+}
+
+/** The endpoint for one of the free OpenAI-compatible providers, if its key is set. */
+export function freeEndpointFor(provider: string, env: Readonly<Record<string, string | undefined>>): OpenAiEndpoint | null {
+  if (provider === 'groq' && env.GROQ_API_KEY) return groq(env.GROQ_API_KEY);
+  if (provider === 'mistral' && env.MISTRAL_API_KEY) return mistral(env.MISTRAL_API_KEY);
+  if (provider === 'openrouter' && env.OPENROUTER_API_KEY) return openRouterFree(env.OPENROUTER_API_KEY);
+  return null;
 }
 
 /** The endpoint for this server: OpenAI if its key is set, else OpenRouter, else none. */

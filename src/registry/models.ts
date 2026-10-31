@@ -8,7 +8,7 @@ import type { PriceEntry, TokenRates } from './pricing.ts';
 // and gpt-3.5-turbo / gpt-4-0613, whose 16K / 8K context windows are smaller than one build
 // loop needs.
 
-export type Vendor = 'Anthropic' | 'OpenAI' | 'Google';
+export type Vendor = 'Anthropic' | 'OpenAI' | 'Google' | 'Groq' | 'OpenRouter' | 'Mistral';
 
 export interface ModelInfo {
   id: string;
@@ -24,8 +24,13 @@ const SOURCES: Record<Vendor, string> = {
   Anthropic: 'https://platform.claude.com/docs/en/about-claude/pricing',
   OpenAI: 'https://developers.openai.com/api/docs/pricing',
   Google: 'https://ai.google.dev/gemini-api/docs/pricing',
+  Groq: 'https://groq.com/pricing',
+  OpenRouter: 'https://openrouter.ai/models?max_price=0',
+  Mistral: 'https://mistral.ai/pricing#api-pricing',
 };
-const PROVIDER: Record<Vendor, string> = { Anthropic: 'anthropic', OpenAI: 'openai', Google: 'google' };
+const PROVIDER: Record<Vendor, string> = {
+  Anthropic: 'anthropic', OpenAI: 'openai', Google: 'google', Groq: 'groq', OpenRouter: 'openrouter', Mistral: 'mistral',
+};
 
 interface Row extends Omit<ModelInfo, 'id'> {
   product: string;
@@ -51,6 +56,10 @@ function tokenRates(r: Row['rates'], writes?: [number, number]): TokenRates {
 const longTier = (overTokens: number, r: Row['rates']) => ({ overTokens, rates: tokenRates(r) });
 const doubles = (from: string, note: string, r: Row['rates']) => ({ priceChanges: [{ from, note, rates: tokenRates(r) }] });
 const FREE_TIER = { freeTier: { note: 'Free tier available; its rate limits are not on the pricing page' } };
+const UNVERIFIED_FREE = {
+  confidence: 'unverified' as const,
+  freeTier: { note: 'Free tier with a daily request limit; paid rate not yet checked' },
+};
 // OpenAI flagship models list separate prices above 272K input tokens.
 const openaiLong = (r: Row['rates']) => ({ longPrompt: longTier(272_000, r) });
 
@@ -139,6 +148,15 @@ const ROWS: Row[] = [
   },
   { vendor: 'Google', label: 'Gemini 2.5 Flash', product: 'gemini-2.5-flash', rates: [0.3, 2.5, 0.03], lifecycle: 'legacy', extra: FREE_TIER },
   { vendor: 'Google', label: 'Gemini 2.5 Flash-Lite', product: 'gemini-2.5-flash-lite', rates: [0.1, 0.4, 0.01], lifecycle: 'legacy', extra: FREE_TIER },
+
+  // Free-tier providers added for the hackathon (OpenAI-compatible APIs). Paid rates are not
+  // yet checked against the pricing pages, so they are marked unverified and show as
+  // assumptions; on the free tiers the calls cost nothing.
+  { vendor: 'Groq', label: 'Llama 3.3 70B (Groq)', product: 'llama-3.3-70b-versatile', rates: [0.59, 0.79, null], extra: UNVERIFIED_FREE },
+  { vendor: 'OpenRouter', label: 'gpt-oss-120b (OpenRouter, free)', product: 'gpt-oss-120b-free', rates: [0, 0, null], extra: UNVERIFIED_FREE },
+  { vendor: 'OpenRouter', label: 'Qwen3 Coder (OpenRouter, free)', product: 'qwen3-coder-free', rates: [0, 0, null], extra: UNVERIFIED_FREE },
+  { vendor: 'Mistral', label: 'Mistral Small', product: 'mistral-small-latest', rates: [0.1, 0.3, null], extra: UNVERIFIED_FREE },
+  { vendor: 'Mistral', label: 'Devstral Small', product: 'devstral-small-latest', rates: [0.1, 0.3, null], extra: UNVERIFIED_FREE },
 ];
 
 const idOf = (r: Row) => `${PROVIDER[r.vendor]}/${r.product}`;

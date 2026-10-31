@@ -5,7 +5,7 @@ import {
   type ClaudeCall, type ClaudeMessage, type ClaudeTransport, type ModelCaller,
 } from '../adapters/claude.ts';
 import { fetchPost, geminiTransport } from '../adapters/gemini.ts';
-import { openAiEndpointFrom, openAiTransport } from '../adapters/openai.ts';
+import { freeEndpointFor, openAiEndpointFrom, openAiTransport } from '../adapters/openai.ts';
 import { BUILDER_SYSTEM_PROMPT, FeatureBuilder } from '../build/build-loop.ts';
 import { INSTALL_COMMAND, LIVE_CHECKS, TEMPLATE_GUIDE, writeTemplate } from '../build/template.ts';
 import { Verifier, type CheckSpec } from '../build/verifier.ts';
@@ -98,7 +98,9 @@ function liveSetup(provider: string): ModeSetup {
       ? geminiTransport(fetchPost(process.env.GEMINI_API_KEY ?? ''))
       : provider === 'openai'
         ? openAiTransport(openAiEndpointFrom(process.env)!)
-        : sdkTransport(new Anthropic()),
+        : freeEndpointFor(provider, process.env)
+          ? openAiTransport(freeEndpointFor(provider, process.env)!)
+          : sdkTransport(new Anthropic()),
     runs: new PgRunLog(db()),
     checksFor: () => LIVE_CHECKS,
     systemPrompt: `${BUILDER_SYSTEM_PROMPT}\n\n${TEMPLATE_GUIDE}`,
@@ -173,7 +175,7 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
   // One adapter per vendor whose key is configured. A relay phase on any other vendor runs
   // on the build model instead, and the substitution is recorded.
   const adapters: Partial<Record<string, ClaudeAdapter>> = {};
-  for (const p of ['anthropic', 'google', 'openai']) {
+  for (const p of ['anthropic', 'google', 'openai', 'groq', 'openrouter', 'mistral']) {
     if (liveModeStatus(process.env, p).available) adapters[p] = new ClaudeAdapter(gate, registry, liveSetup(p).transport, p);
   }
 

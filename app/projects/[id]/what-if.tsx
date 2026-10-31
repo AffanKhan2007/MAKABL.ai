@@ -49,7 +49,9 @@ const PHASE_TEXT: Record<Phase, { name: string; job: string }> = {
   build: { name: 'Build', job: 'writes and checks each feature' },
   review: { name: 'Review', job: 'checks each feature against its criteria' },
 };
-const VENDOR_CLASS: Record<string, string> = { Anthropic: 'v-anthropic', OpenAI: 'v-openai', Google: 'v-google' };
+const VENDOR_CLASS: Record<string, string> = {
+  Anthropic: 'v-anthropic', OpenAI: 'v-openai', Google: 'v-google', Groq: 'v-openai', OpenRouter: 'v-google', Mistral: 'v-anthropic',
+};
 const TONE = { block: 'bad', warn: 'warn', info: 'accent' } as const;
 const SEVERITY_TEXT = { block: 'Blocker', warn: 'Trade-off', info: 'Shortcoming' } as const;
 
@@ -97,7 +99,7 @@ export function WhatIf({ action, apply, initial, models, defaults, retryChoices,
       <div className={`relay-node${disabled ? ' off' : ''}`} key={phase}>
         <div className="relay-step">{PHASE_TEXT[phase].name}</div>
         <select name={name} defaultValue={value} disabled={disabled} aria-label={`${PHASE_TEXT[phase].name} model`}>
-          {['Anthropic', 'OpenAI', 'Google'].flatMap((v) => [false, true].map((older) => {
+          {['Anthropic', 'OpenAI', 'Google', 'Groq', 'OpenRouter', 'Mistral'].flatMap((v) => [false, true].map((older) => {
             const group = models.filter((m) => m.vendor === v && !!m.lifecycle === older);
             return group.length ? (
               <optgroup key={`${v}-${older}`} label={older ? `${v}: older and preview` : v}>
