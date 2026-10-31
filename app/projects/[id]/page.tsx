@@ -139,6 +139,8 @@ export default async function ProjectPage({
   const buildHigh = paid.lines.filter((l) => l.unit === 'tokens').reduce((a, l) => a + (l.range?.high ?? 0), 0);
   const suggestedCap = Math.max(1, Math.ceil(buildExpected / 1_000_000) * 2);
   const modelLabel = labelOf(project.spec.buildModel);
+  const buildVendor = MODELS.find((m) => m.id === project.spec.buildModel)?.vendor;
+  const buildApi = buildVendor === 'Google' ? 'Gemini API' : buildVendor === 'OpenAI' ? 'OpenAI API' : 'Claude API';
   const explore = await whatIf(project.spec, paid.totals.expected, {
     ...(budget ? { capMicros: budget.projectCap } : {}),
     live: project.buildMode === 'live',
@@ -236,7 +238,7 @@ export default async function ProjectPage({
         </p>
       ) : (
         <p className="notice bad">
-          Live build: calls the Claude API on your key and spends real money, within the caps below. Generated code
+          Live build: calls the {buildApi} on your key and spends real money, within the caps below. Generated code
           is installed, tested and built on this computer without a sandbox.
         </p>
       )}
@@ -463,13 +465,13 @@ export default async function ProjectPage({
           <h2 style={{ margin: 0 }}>Build mode</h2>
           {project.buildMode === 'live' ? (
             <form action={setBuildModeAction.bind(null, id)} className="row">
-              <span>This project will call the Claude API.</span>
+              <span>This project will call the {buildApi}.</span>
               <button type="submit" name="mode" value="simulated" className="secondary">Switch back to simulated</button>
             </form>
           ) : live.available ? (
             <form action={setBuildModeAction.bind(null, id)} className="stack">
               <p style={{ margin: 0 }}>
-                A live build has Claude write the app for real on the Next.js starter project, spending money on your
+                A live build has {modelLabel} write the app for real on the Next.js starter project, spending money on your
                 API key within the caps, and logs each feature's real cost so future estimates improve.
               </p>
               <label className="check">
