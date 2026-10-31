@@ -1,0 +1,96 @@
+{
+  "name": "MAKABL",
+  "start": "2026-10-31 11:05",
+  "end": "2026-11-01 11:05",
+  "tz": "+05:30",
+  "team": 1,
+  "theme": "",
+  "items": [
+    {
+      "id": 1,
+      "text": "SPIKE: one real live build (1 feature, Sonnet, $2 cap) - proves it really builds",
+      "tier": "must",
+      "status": "open"
+    },
+    {
+      "id": 2,
+      "text": "SPIKE: public URL - run app on Ubuntu VM + tunnel, or decide local demo",
+      "tier": "must",
+      "status": "cut",
+      "why": "replaced: no VM; public URL comes from a tunnel on the demo laptop"
+    },
+    {
+      "id": 3,
+      "text": "Hero first screen: problem + promise in 5 seconds",
+      "tier": "must",
+      "status": "open"
+    },
+    {
+      "id": 4,
+      "text": "Demo seed: account + 1 finished project + 1 fresh idea ready to plan",
+      "tier": "must",
+      "status": "open"
+    },
+    {
+      "id": 5,
+      "text": "Demo script (90s) + fallback screen recording",
+      "tier": "must",
+      "status": "open"
+    },
+    {
+      "id": 6,
+      "text": "Pitch: problem, demo, how, impact + Q&A sheet",
+      "tier": "must",
+      "status": "open"
+    },
+    {
+      "id": 7,
+      "text": "Sandbox on VM: checks run in Docker, no network/secrets, limits",
+      "tier": "should",
+      "status": "cut",
+      "why": "VM has no network; a dedicated team laptop runs live builds instead (disclosed as not a sandbox)"
+    },
+    {
+      "id": 8,
+      "text": "Open the generated app (preview link) after a live build",
+      "tier": "should",
+      "status": "open"
+    },
+    {
+      "id": 9,
+      "text": "Track record seeded from real live runs (calibration visible)",
+      "tier": "should",
+      "status": "open"
+    },
+    {
+      "id": 10,
+      "text": "Vercel preview/production deploy with approval",
+      "tier": "could",
+      "status": "open"
+    },
+    {
+      "id": 11,
+      "text": "Email verification + password reset",
+      "tier": "could",
+      "status": "open"
+    },
+    {
+      "id": 12,
+      "text": "Probe-then-quote run visible in UI",
+      "tier": "could",
+      "status": "open"
+    },
+    {
+      "id": 13,
+      "text": "SPIKE: public URL - tunnel from the demo laptop (cloudflared quick tunnel)",
+      "tier": "must",
+      "status": "open"
+    },
+    {
+      "id": 14,
+      "text": "Second laptop as build machine: same repo, own DB, live builds run there",
+      "tier": "should",
+      "status": "open"
+    }
+  ]
+}
