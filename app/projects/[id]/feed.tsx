@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
-import { money } from '../../format.ts';
+import { fineMoney, money } from '../../format.ts';
 
 // Live feed (FR-27). Every line comes from the activity_events table via server-sent
 // events; nothing here is model narration.
@@ -33,9 +33,9 @@ function describe(e: FeedEvent): string {
   switch (e.type) {
     case 'task_started': return `${task}started "${p.feature}" (${p.featureType})`;
     case 'attempt_started': return `${task}attempt ${p.attempt}`;
-    case 'budget_reserved': return `${task}reserved ${money(num(p.worstCase))} (worst case)`;
-    case 'budget_settled': return `${task}model call cost ${money(num(p.observed))}`;
-    case 'budget_overshoot': return `${task}call cost ${money(num(p.by))} more than reserved`;
+    case 'budget_reserved': return `${task}reserved ${fineMoney(num(p.worstCase))} (worst case)`;
+    case 'budget_settled': return `${task}model call cost ${fineMoney(num(p.observed))}`;
+    case 'budget_overshoot': return `${task}call cost ${fineMoney(num(p.by))} more than reserved`;
     case 'budget_blocked': return `${task}blocked: ${p.check} would be exceeded (${money(num(p.used))} committed + ${money(num(p.worstCase))} > ${money(num(p.cap))})`;
     case 'task_paused': return `${task}paused, waiting for your approval`;
     case 'approval_requested': return `approval requested: ${p.reason}`;
