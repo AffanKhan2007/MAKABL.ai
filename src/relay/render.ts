@@ -104,6 +104,7 @@ export function designReference(d: { n: number; page: string; html: string }): s
     `Design reference: the owner chose version ${d.n} of the "${d.page}" page as the look to build. Match its layout, section order,`,
     'colour palette, typography, spacing, corner radii and tone, and keep its content and wording where they fit the feature. Rebuild it',
     'with React and CSS in the project (the reference is plain HTML, not code to paste). Use no external fonts, images or links.',
+    designChecklist(d),
     'Reference HTML:',
     d.html.slice(0, 12_000),
   ].join('\n');
@@ -118,3 +119,72 @@ export const DESIGN_GUIDE = [
   'loading and error states. Use semantic HTML and accessible labels. Subtle motion only (transform and opacity, and respect',
   'prefers-reduced-motion). No external fonts, images or scripts: use inline SVG, CSS gradients and shapes.',
 ].join(' ');
+
+// ---- holding the build to the render -----------------------------------------------------
+
+export interface Design { n: number; page: string; html: string }
+
+/**
+ * The look for each page: the one the owner chose for that page, else its newest render.
+ * Without this a build with no explicit choice ignored every render, and a choice on one page
+ * was used as the reference for all of them.
+ */
+export function designTargets(events: Array<{ type: string; payload: Record<string, unknown> }>): Design[] {
+  const renders = events.filter((e) => e.type === 'relay_render')
+    .map((e) => ({ n: Number(e.payload.n), page: String(e.payload.page), html: String(e.payload.html) }));
+  const chosen = new Set(events.filter((e) => e.type === 'relay_render_chosen').map((e) => Number(e.payload.n)));
+  const byPage = new Map<string, Design>();
+  for (const r of renders) {
+    const had = byPage.get(r.page);
+    // Later renders win, except that a chosen version is not displaced by an unchosen later one.
+    if (!had || chosen.has(r.n) || !chosen.has(had.n)) byPage.set(r.page, r);
+  }
+  return [...byPage.values()];
+}
+
+/** The design for a feature: the page it names, else Home, else the first one. */
+export function designFor(designs: Design[], feature: string): Design | undefined {
+  const f = feature.toLowerCase();
+  return designs.find((d) => f.includes(d.page.toLowerCase()) || d.page.toLowerCase().includes(f))
+    ?? designs.find((d) => d.page.toLowerCase() === 'home') ?? designs[0];
+}
+
+const HEX = /#(?:[0-9a-f]{6}|[0-9a-f]{3})\b/gi;
+const norm = (c: string) => (c.length === 4 ? `#${c[1]}${c[1]}${c[2]}${c[2]}${c[3]}${c[3]}` : c).toLowerCase();
+
+/** What a render commits to, literally: its colours, its visible headings and its font stack. */
+export function designFacts(html: string): { colours: string[]; texts: string[]; fonts: string | null } {
+  const counts = new Map<string, number>();
+  for (const m of html.matchAll(HEX)) counts.set(norm(m[0]), (counts.get(norm(m[0])) ?? 0) + 1);
+  // Near-white and near-black are everywhere and prove nothing; keep the palette that gives it character.
+  const colours = [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([c]) => c)
+    .filter((c) => !['#ffffff', '#000000'].includes(c)).slice(0, 6);
+  const body = html.replace(/<style[\s\S]*?<\/style>/gi, '');
+  const texts = [...body.matchAll(/<(h1|h2|h3|button|a|title)\b[^>]*>([^<]{3,60})</gi)]
+    .map((m) => m[2]!.replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim()).filter((t) => /[a-z]/i.test(t));
+  const fonts = /font-family\s*:\s*([^;}"]+)/i.exec(html)?.[1]?.trim() ?? null;
+  return { colours, texts: [...new Set(texts)].slice(0, 10), fonts };
+}
+
+/** The literal must-match list that goes into the builder's brief next to the reference HTML. */
+export function designChecklist(d: Design): string {
+  const f = designFacts(d.html);
+  return [
+    `Must-match checklist for the "${d.page}" page (checked after the build; misses are sent back to you):`,
+    f.colours.length ? `- Use exactly these colours, as CSS variables in app/globals.css: ${f.colours.join(', ')}` : '',
+    f.fonts ? `- Font stack: ${f.fonts}` : '',
+    f.texts.length ? `- Show this exact wording: ${f.texts.map((t) => `"${t}"`).join(', ')}` : '',
+    '- Keep the same section order as the reference, top to bottom.',
+  ].filter(Boolean).join('\n');
+}
+
+/** How much of the render's checklist the built files carry. */
+export function fidelity(d: Design, files: string[]): { score: number; missingColours: string[]; missingTexts: string[]; checked: number } {
+  const f = designFacts(d.html);
+  const all = files.join('\n');
+  const lower = all.toLowerCase();
+  const missingColours = f.colours.filter((c) => !lower.includes(c) && !lower.includes(c.replace(/^#(.)\1(.)\2(.)\3$/, '#$1$2$3')));
+  const missingTexts = f.texts.filter((t) => !all.includes(t) && !all.includes(t.replace(/&/g, '&amp;')));
+  const checked = f.colours.length + f.texts.length;
+  return { score: checked ? 1 - (missingColours.length + missingTexts.length) / checked : 1, missingColours, missingTexts, checked };
+}

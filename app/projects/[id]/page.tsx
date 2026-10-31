@@ -205,6 +205,7 @@ export default async function ProjectPage({
       <div className="row small" style={{ margin: '10px 0 18px' }}>
         <span className="muted num">spec v{project.specVersion}</span>
         {!running && <Link href={`/projects/${id}/edit`}>Change the spec</Link>}
+        <Link href={`/projects/${id}/steer`}>{easy ? 'Tell it what you want' : 'Plan and steer'}</Link>
         <Link href={`/projects/${id}/renders`}>{easy ? 'See how it will look' : 'Wireframe & renders'}</Link>
         <a href={`/api/projects/${id}/export`}>Export (zip)</a>
       </div>
@@ -447,6 +448,14 @@ export default async function ProjectPage({
                 <p className="muted small" style={{ margin: '0 0 10px' }}>
                   Google may use prompts sent on its free API tier to improve its products. Use a paid-tier key for prompts excluded from product improvement.
                 </p>
+              )}
+              {!easy && (
+                <div className="row" style={{ marginBottom: 10 }}>
+                  <label htmlFor="checkpoint">Stop for me</label>
+                  <select id="checkpoint" name="checkpoint" defaultValue="brief">
+                    <option value="none">Never</option><option value="brief">After the plan is written</option><option value="feature">After every feature</option>
+                  </select>
+                </div>
               )}
               <label className="check" style={{ marginBottom: 10 }}>
                 <input type="checkbox" name="confirm" value="yes" required />

@@ -72,3 +72,29 @@ test('the builder and reviewer are told to match the render, and every build get
   assert.ok(!reviewPrompt({ feature: 'Home', acceptance: [], checks: [], files: [] }).includes('Reference HTML'));
   for (const rule of ['CSS variables', 'contrast', 'prefers-reduced-motion', 'lorem ipsum', 'empty']) assert.ok(DESIGN_GUIDE.includes(rule), rule);
 });
+
+import { designFacts, designFor, designTargets, fidelity } from '../src/relay/render.ts';
+
+const HOME = '<html><head><style>body{font-family:Georgia,serif;background:#FFF8F0;color:#5c3a21}a{color:#d48344}</style></head><body><h1>Crumb &amp; Co.</h1><button>Order now</button></body></html>';
+
+test('a page with no explicit choice is still built to its newest render, and a choice is not displaced', () => {
+  const events = [
+    ev('relay_render', { n: 1, page: 'Home', html: 'a' }), ev('relay_render', { n: 2, page: 'Home', html: 'b' }),
+    ev('relay_render', { n: 3, page: 'Menu', html: 'c' }),
+  ];
+  assert.deepEqual(designTargets(events).map((d) => d.n), [2, 3]);
+  const chosen = [...events, ev('relay_render', { n: 4, page: 'Home', html: 'd' }), ev('relay_render_chosen', { n: 2 })];
+  assert.equal(designTargets(chosen).find((d) => d.page === 'Home')!.n, 2);
+  assert.equal(designFor(designTargets(events), 'Menu page')!.page, 'Menu');
+  assert.equal(designFor(designTargets(events), 'Checkout')!.page, 'Home');
+});
+
+test('the facts a render commits to are measured in the built code', () => {
+  const f = designFacts(HOME);
+  assert.deepEqual(f.colours.sort(), ['#5c3a21', '#d48344', '#fff8f0']);
+  assert.ok(f.texts.includes('Crumb & Co.') && f.texts.includes('Order now'));
+  const d = { n: 1, page: 'Home', html: HOME };
+  assert.equal(fidelity(d, [':root{--a:#5C3A21;--b:#d48344;--c:#fff8f0} <h1>Crumb & Co.</h1><button>Order now</button>']).score, 1);
+  const miss = fidelity(d, [':root{--a:#5c3a21} <h1>Bakery</h1>']);
+  assert.ok(miss.score < 0.5 && miss.missingColours.includes('#d48344') && miss.missingTexts.includes('Order now'));
+});

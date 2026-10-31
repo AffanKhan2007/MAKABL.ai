@@ -103,6 +103,10 @@ export async function startBuildAction(projectId: string, form: FormData): Promi
   }
   const blocked = liveBlocker(provider);
   if (blocked) return back(projectId, `Cannot build live on ${modelLabel(project.spec.buildModel)}: ${blocked}.`);
+  const level = String(form.get('checkpoint') ?? '');
+  if (['none', 'brief', 'feature'].includes(level)) {
+    await new PgEventLog(db(), await userScope()).append({ projectId, taskId: null, type: 'owner_checkpoint', payload: { level } });
+  }
   startBuild(projectId, await currentUserId());
   revalidatePath(`/projects/${projectId}`);
   back(projectId);

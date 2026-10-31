@@ -10,7 +10,8 @@ export type EventType =
   | 'task_verified' | 'task_failed' | 'task_refused' | 'calibration_recorded' | 'model_call_failed'
   | 'workspace_ready' | 'build_mode_changed' | 'spec_changed' | 'project_checks_run'
   | 'relay_budget' | 'relay_phase_started' | 'relay_phase_finished' | 'relay_handoff'
-  | 'relay_substituted' | 'relay_review' | 'relay_render' | 'relay_render_chosen' | 'negotiation' | 'prompt_split';
+  | 'relay_substituted' | 'relay_review' | 'relay_render' | 'relay_render_chosen' | 'negotiation' | 'prompt_split'
+  | 'relay_fidelity' | 'relay_checkpoint' | 'owner_note' | 'owner_brief_edit' | 'owner_approved' | 'owner_checkpoint';
 
 export interface ActivityEvent {
   seq: number;
