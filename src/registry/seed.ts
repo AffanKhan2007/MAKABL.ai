@@ -1,76 +1,19 @@
 import { usd } from '../domain/types.ts';
+import { modelPrices } from './models.ts';
 import type { PriceEntry } from './pricing.ts';
 
-// Hand-curated seed. Every entry was checked against the official page in sourceUrl on
-// 2026-10-27 and must be rechecked after revalidateAfter; after that date the UI shows
+// Hand-curated seed for hosting, database and git. Every entry was checked against the
+// official page in sourceUrl on 2026-10-27 and must be rechecked after revalidateAfter; after that date the UI shows
 // it as an assumption again (working model 7.6). Prices are list prices in USD.
 // verifiedAt covers prices and limits. Commercial-use terms were checked only for Vercel;
 // the other commercialUse values are unchecked judgements.
 
 const VERIFIED = '2026-10-27';
 const REVALIDATE = '2027-01-27';
-const ANTHROPIC_PRICING = 'https://platform.claude.com/docs/en/about-claude/pricing';
 
 export const seedPrices: PriceEntry[] = [
-  {
-    id: 'anthropic/claude-opus-5-5',
-    provider: 'anthropic', product: 'claude-opus-5-5', plan: 'api', category: 'llm',
-    currency: 'USD', unit: 'token',
-    // Cache reads on Opus 5.5 are 0.05x base input, not the usual 0.1x.
-    rates: {
-      inputPerMTok: usd(4), outputPerMTok: usd(20),
-      cacheWrite5mPerMTok: usd(5), cacheWrite1hPerMTok: usd(8), cacheReadPerMTok: usd(0.2),
-    },
-    billingPeriod: 'usage', commercialUse: 'allowed',
-    sourceUrl: ANTHROPIC_PRICING,
-    verifiedAt: VERIFIED, confidence: 'high', revalidateAfter: REVALIDATE,
-  },
-  {
-    id: 'anthropic/claude-sonnet-5-5',
-    provider: 'anthropic', product: 'claude-sonnet-5-5', plan: 'api', category: 'llm',
-    currency: 'USD', unit: 'token',
-    // Cache reads on Sonnet 5.5 are 0.05x base input, not the usual 0.1x.
-    rates: {
-      inputPerMTok: usd(2), outputPerMTok: usd(10),
-      cacheWrite5mPerMTok: usd(2.5), cacheWrite1hPerMTok: usd(4), cacheReadPerMTok: usd(0.1),
-    },
-    billingPeriod: 'usage', commercialUse: 'allowed',
-    sourceUrl: ANTHROPIC_PRICING,
-    verifiedAt: VERIFIED, confidence: 'high', revalidateAfter: REVALIDATE,
-  },
-  {
-    id: 'anthropic/claude-haiku-5-5',
-    provider: 'anthropic', product: 'claude-haiku-5-5', plan: 'api', category: 'llm',
-    currency: 'USD', unit: 'token',
-    rates: {
-      inputPerMTok: usd(0.1), outputPerMTok: usd(0.5),
-      cacheWrite5mPerMTok: usd(0.125), cacheWrite1hPerMTok: usd(0.2), cacheReadPerMTok: usd(0.01),
-    },
-    longPrompt: {
-      overTokens: 100_000,
-      rates: {
-        inputPerMTok: usd(0.5), outputPerMTok: usd(2.5),
-        cacheWrite5mPerMTok: usd(0.625), cacheWrite1hPerMTok: usd(1), cacheReadPerMTok: usd(0.05),
-      },
-    },
-    billingPeriod: 'usage', commercialUse: 'allowed',
-    sourceUrl: ANTHROPIC_PRICING,
-    verifiedAt: VERIFIED, confidence: 'high', revalidateAfter: REVALIDATE,
-  },
-  {
-    // Not a build model here: it is where "default" refusal fallbacks send cyber-category
-    // declines from Opus 5.5, so it bounds what a fallback attempt can cost.
-    id: 'anthropic/claude-opus-4-8',
-    provider: 'anthropic', product: 'claude-opus-4-8', plan: 'api', category: 'llm',
-    currency: 'USD', unit: 'token',
-    rates: {
-      inputPerMTok: usd(5), outputPerMTok: usd(25),
-      cacheWrite5mPerMTok: usd(6.25), cacheWrite1hPerMTok: usd(10), cacheReadPerMTok: usd(0.5),
-    },
-    billingPeriod: 'usage', commercialUse: 'allowed',
-    sourceUrl: ANTHROPIC_PRICING,
-    verifiedAt: VERIFIED, confidence: 'high', revalidateAfter: REVALIDATE,
-  },
+  // Every model a phase can run on (checked 2026-10-31); see models.ts.
+  ...modelPrices,
   {
     id: 'vercel/hobby',
     provider: 'vercel', product: 'hosting', plan: 'hobby', category: 'host',

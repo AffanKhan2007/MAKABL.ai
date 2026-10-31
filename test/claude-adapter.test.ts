@@ -118,12 +118,12 @@ test('a fallback-served response prices each attempt at its own model', () => {
   assert.equal(priced.basis, 'usage_observed');
 });
 
-test('a model missing from the registry is priced at the highest known rates and marked estimated', () => {
+test('a model missing from the registry is priced at the highest known Claude rates and marked estimated', () => {
   const msg = message({ model: 'claude-future-9' });
   const priced = priceMessage(msg, opus, registry);
   assert.deepEqual(priced.unknownModels, ['claude-future-9']);
   assert.equal(priced.basis, 'estimated');
-  assert.equal(priced.cost, observedLlmCost(opus48, { input_tokens: 1_000, output_tokens: 2_000 }));
+  assert.equal(priced.cost, observedLlmCost(registry.get('anthropic/claude-fable-5-1'), { input_tokens: 1_000, output_tokens: 2_000 }));
 });
 
 test('usage feeds the calibration run for the feature being built', async () => {

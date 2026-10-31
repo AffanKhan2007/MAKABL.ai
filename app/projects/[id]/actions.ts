@@ -7,11 +7,13 @@ import { usd } from '../../../src/domain/types.ts';
 import { gate, isRunning, startBuild } from '../../../src/server/builds.ts';
 import { db } from '../../../src/server/db.ts';
 import { liveModeStatus } from '../../../src/server/live-mode.ts';
-import { planFor } from '../../../src/server/plan.ts';
+import { liveBlocker, modelLabel, planFor, PRESETS, registry, withPreset, type PresetId } from '../../../src/server/plan.ts';
+import { parseWhatIf, whatIf, type WhatIfState } from '../../../src/server/what-if.ts';
+import { diffSpecs } from '../../../src/spec/diff.ts';
 import { purgeProject } from '../../../src/server/purge.ts';
 import { startPreview, stopPreview } from '../../../src/build/preview.ts';
 import { workspaceDir } from '../../../src/server/paths.ts';
-import { getProject, recordPlanApproval, setBuildMode, setProjectState } from '../../../src/server/projects.ts';
+import { getProject, recordPlanApproval, saveSpecVersion, setBuildMode, setProjectState } from '../../../src/server/projects.ts';
 import { currentUserId, userScope } from '../../../src/server/session.ts';
 
 // Every action re-reads the project as the current user and checks its state, so a
@@ -96,6 +98,10 @@ export async function startBuildAction(projectId: string): Promise<void> {
   if (project.buildMode === 'live' && !liveModeStatus().available) {
     return back(projectId, 'Live builds are not enabled on this server.');
   }
+  if (project.buildMode === 'live') {
+    const blocked = liveBlocker(registry.get(project.spec.buildModel).provider);
+    if (blocked) return back(projectId, `Cannot build live on ${modelLabel(project.spec.buildModel)}: ${blocked}.`);
+  }
   startBuild(projectId, await currentUserId());
   revalidatePath(`/projects/${projectId}`);
   back(projectId);
@@ -144,6 +150,57 @@ export async function setBuildModeAction(projectId: string, form: FormData): Pro
   await setBuildMode(projectId, mode);
   await new PgEventLog(db(), await userScope()).append({
     projectId, taskId: null, type: 'build_mode_changed', payload: { mode },
+  });
+  revalidatePath(`/projects/${projectId}`);
+  back(projectId);
+}
+
+/** Recompute the plan for the explorer's settings. Saves nothing. */
+export async function whatIfAction(projectId: string, _prev: WhatIfState, form: FormData): Promise<WhatIfState> {
+  const project = await getProject(projectId);
+  if (!project) return { result: null, error: 'Project not found.' };
+  const parsed = parseWhatIf(project.spec, form);
+  if ('error' in parsed) return { result: null, error: parsed.error };
+  const [baseline, budget] = await Promise.all([planFor(project.spec), (await gate()).getBudget(projectId).catch(() => null)]);
+  const result = await whatIf(parsed.spec, baseline.paths[1].totals.expected, {
+    ...(budget ? { capMicros: budget.projectCap } : {}),
+    live: project.buildMode === 'live',
+  }, parsed.overrides);
+  return { result, error: null };
+}
+
+/** Save the explorer's settings as the next spec version; the plan then needs approving again. */
+export async function applyWhatIfAction(projectId: string, form: FormData): Promise<void> {
+  const project = await getProject(projectId);
+  if (!project) return back(projectId, 'Project not found.');
+  if (isRunning(projectId)) return back(projectId, 'Wait for the build to pause or finish before changing the plan.');
+  const parsed = parseWhatIf(project.spec, form);
+  if ('error' in parsed) return back(projectId, parsed.error);
+  const diff = diffSpecs(project.spec, parsed.spec);
+  if (!diff.settings.length) return back(projectId);
+  const version = await saveSpecVersion(projectId, project.name, parsed.spec);
+  await new PgEventLog(db(), await userScope()).append({
+    projectId, taskId: null, type: 'spec_changed',
+    payload: { fromVersion: project.specVersion, toVersion: version, added: [], removed: [], changed: [], settings: diff.settings },
+  });
+  revalidatePath(`/projects/${projectId}`);
+  back(projectId);
+}
+
+/** Easy mode: switch the project to one of the three quality levels, as a new spec version. */
+export async function applyPresetAction(projectId: string, form: FormData): Promise<void> {
+  const project = await getProject(projectId);
+  if (!project) return back(projectId, 'Project not found.');
+  if (isRunning(projectId)) return back(projectId, 'Wait for the build to pause or finish before changing the plan.');
+  const id = String(form.get('preset') ?? '');
+  if (!(id in PRESETS)) return back(projectId, 'Pick Budget, Balanced or Best quality.');
+  const spec = withPreset(project.spec, id as PresetId);
+  const diff = diffSpecs(project.spec, spec);
+  if (!diff.settings.length) return back(projectId);
+  const version = await saveSpecVersion(projectId, project.name, spec);
+  await new PgEventLog(db(), await userScope()).append({
+    projectId, taskId: null, type: 'spec_changed',
+    payload: { fromVersion: project.specVersion, toVersion: version, added: [], removed: [], changed: [], settings: diff.settings },
   });
   revalidatePath(`/projects/${projectId}`);
   back(projectId);

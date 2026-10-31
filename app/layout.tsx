@@ -4,7 +4,9 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { DB_UNAVAILABLE_MESSAGE, isDbUnavailable } from '../src/server/db.ts';
 import { getSessionUser } from '../src/server/session.ts';
+import { getMode } from '../src/server/mode.ts';
 import { signOutAction } from './auth-actions.ts';
+import { setModeAction } from './mode-actions.ts';
 import './globals.css';
 
 const sans = Geist({ subsets: ['latin'], variable: '--font-geist-sans' });
@@ -56,8 +58,13 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
     );
   }
 
+  const mode = await getMode();
   const right = user ? (
     <div className="user">
+      <form action={setModeAction} className="mode-switch" aria-label="Interface mode">
+        <button type="submit" name="mode" value="easy" aria-pressed={mode === 'easy'} title="Plain words, fewer choices">Easy</button>
+        <button type="submit" name="mode" value="pro" aria-pressed={mode === 'pro'} title="Every model, phase and number">Pro</button>
+      </form>
       <nav className="nav" aria-label="Main">
         <Link href="/projects">Projects</Link>
         <Link href="/projects/new">New project</Link>

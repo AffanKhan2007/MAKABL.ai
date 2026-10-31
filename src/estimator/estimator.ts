@@ -4,7 +4,7 @@ import {
   type CostCategory, type Confidence, type Horizon, type LineClass, type Micros, type Range,
 } from '../domain/types.ts';
 import { observedLlmCost, type LlmUsage } from '../gate/llm-cost.ts';
-import type { MeterId, PriceEntry, PricingRegistry } from '../registry/pricing.ts';
+import { tokenRatesFor, type MeterId, type PriceEntry, type PricingRegistry } from '../registry/pricing.ts';
 
 export type { CalibrationRun, FeatureType } from '../calibration/runs.ts';
 
@@ -48,10 +48,58 @@ export interface EstimateInput {
   probes?: Record<string, Micros>;
   /** Things the plan knows exist but cannot price (domain, third-party APIs). */
   unpricedItems?: string[];
+  /** Models for the relay phases around the build. Omitted: a build-only plan. */
+  relay?: RelayModels;
+  /** Knobs the what-if explorer turns. Each has a stated default. */
+  assumptions?: EstimateAssumptions;
+}
+
+/**
+ * The relay: each phase runs on its own model and hands the next a short brief instead of
+ * its whole transcript. The build phase uses `buildModel`.
+ */
+export type Phase = 'spec' | 'architect' | 'build' | 'review';
+export const PHASES: readonly Phase[] = ['spec', 'architect', 'build', 'review'];
+export type RelayModels = Record<Exclude<Phase, 'build'>, string>;
+
+export interface EstimateAssumptions {
+  /** Extra build attempts per feature while uncalibrated. Default PRIOR_RETRY_RATE. */
+  retryRate?: number;
+  /** Prompt caching in the agent loop. Default true. */
+  caching?: boolean;
+  /** ISO date the build runs, for announced price changes. Default: today. */
+  buildDate?: string;
+}
+
+export interface HandoffEstimate {
+  from: Phase;
+  to: Phase;
+  /** Tokens the next phase would carry if it got the whole transcript. */
+  transcriptTokens: number;
+  briefTokens: number;
+  /** What sending the transcript instead of the brief would add, over the next phase's turns. */
+  saved: Micros;
+  /** The two phases run on different vendors, so no prompt cache carries over. */
+  crossVendor: boolean;
+}
+
+export interface RelayPhaseEstimate {
+  phase: Phase;
+  model: string;
+  provider: string;
+  range: Range;
+}
+
+export interface RelayPlan {
+  phases: RelayPhaseEstimate[];
+  handoffs: HandoffEstimate[];
+  handoffSavings: Micros;
 }
 
 export interface CostLine {
   label: string;
+  /** Set on model-usage lines: the relay phase they belong to. */
+  phase?: Phase;
   category: CostCategory;
   lineClass: LineClass;
   unit: string;
@@ -86,6 +134,8 @@ export interface CostPlan {
   assumptions: string[];
   calibration: { runs: number; calibrated: boolean; coverage: Coverage };
   paths: [PathPlan, PathPlan];
+  /** Present when the input names relay models. */
+  relay?: RelayPlan;
   disclosures: string[];
 }
 
@@ -109,7 +159,21 @@ const PRIOR_LOOP: Record<FeatureType, LoopPrior> = {
 };
 /** Wide multipliers while uncalibrated: research shows several-fold spread with a 30x tail. */
 const PRIOR_BAND = { low: 0.5, high: 6 };
-const PRIOR_RETRY_RATE = 0.5;       // extra attempts per feature, until runs say otherwise
+export const PRIOR_RETRY_RATE = 0.5; // extra attempts per feature, until runs say otherwise
+
+/**
+ * Relay phases other than build. Spec and architect run once per project, review once per
+ * feature. No runs are logged for them yet, so they always use these priors.
+ */
+const PHASE_LOOP: Record<Exclude<Phase, 'build'>, LoopPrior> = {
+  spec: { turns: 2, baseContext: 3_000, growthPerTurn: 1_000, outputPerTurn: 2_500 },
+  architect: { turns: 3, baseContext: 6_000, growthPerTurn: 2_000, outputPerTurn: 4_000 },
+  review: { turns: 2, baseContext: 5_000, growthPerTurn: 1_500, outputPerTurn: 1_000 },
+};
+/** Single-pass phases spread less than a build loop, but a checkpoint can still bounce them. */
+const PHASE_BAND = { low: 0.5, high: 3 };
+/** Size of the brief a finishing phase writes for the next one. */
+export const BRIEF_TOKENS = 2_000;
 
 const TRAFFIC_DEFAULTS: Required<Omit<TrafficInput, 'monthlyVisitors'>> = {
   pagesPerVisit: 4, functionCallsPerPage: 2, cpuMsPerCall: 50, wallMsPerCall: 300, memoryGb: 2, kbPerPage: 1_500,
@@ -148,21 +212,43 @@ const spread = (values: number[]): Range => {
   };
 };
 
-/** Cost of one attempt of a cached agent loop. */
-export function loopCost(price: PriceEntry, p: LoopPrior): Micros {
+export interface LoopOptions { caching?: boolean; onDate?: string }
+
+/**
+ * Cost of one attempt of an agent loop. With caching off, every turn resends its whole
+ * context as plain input.
+ */
+export function loopCost(price: PriceEntry, p: LoopPrior, opts: LoopOptions = {}): Micros {
   let total = 0;
   for (let i = 0; i < p.turns; i++) {
     const cached = i === 0 ? 0 : p.baseContext + (i - 1) * p.growthPerTurn;
     const fresh = i === 0 ? p.baseContext : p.growthPerTurn;
-    total += observedLlmCost(price, {
-      input_tokens: 0,
-      output_tokens: p.outputPerTurn,
-      cache_read_input_tokens: cached,
-      cache_creation_input_tokens: fresh,
-      cache_creation: { ephemeral_5m_input_tokens: fresh, ephemeral_1h_input_tokens: 0 },
-    });
+    total += observedLlmCost(price, opts.caching === false
+      ? { input_tokens: cached + fresh, output_tokens: p.outputPerTurn }
+      : {
+        input_tokens: 0,
+        output_tokens: p.outputPerTurn,
+        cache_read_input_tokens: cached,
+        cache_creation_input_tokens: fresh,
+        cache_creation: { ephemeral_5m_input_tokens: fresh, ephemeral_1h_input_tokens: 0 },
+      }, opts.onDate);
   }
   return total;
+}
+
+/** Tokens a loop's transcript holds when it ends: its context plus everything it wrote. */
+const transcriptTokens = (p: LoopPrior) => p.baseContext + p.turns * (p.growthPerTurn + p.outputPerTurn);
+
+/**
+ * What the next phase would pay to carry `extra` more context tokens on each of its turns:
+ * written once, then read from cache (or resent as input with caching off).
+ */
+function carryCost(price: PriceEntry, p: LoopPrior, extra: number, opts: LoopOptions): Micros {
+  if (extra <= 0) return 0;
+  const r = tokenRatesFor(price, p.baseContext + extra, opts.onDate);
+  const perTurn = opts.caching === false ? r.inputPerMTok : r.cacheReadPerMTok;
+  const first = opts.caching === false ? r.inputPerMTok : r.cacheWrite5mPerMTok;
+  return Math.ceil((extra * first + extra * (p.turns - 1) * perTurn) / 1_000_000);
 }
 
 /**
@@ -170,8 +256,8 @@ export function loopCost(price: PriceEntry, p: LoopPrior): Micros {
  * model: re-priced from its token totals, spread evenly over its calls so long-prompt
  * tiers apply per call as they would have.
  */
-export function runCostOn(run: CalibrationRun, price: PriceEntry): Micros {
-  if (run.model === price.id) return run.cost;
+export function runCostOn(run: CalibrationRun, price: PriceEntry, onDate?: string): Micros {
+  if (run.model === price.id && !price.priceChanges?.length) return run.cost;
   const n = run.calls;
   const t = run.tokens;
   const perCall: LlmUsage = {
@@ -181,7 +267,7 @@ export function runCostOn(run: CalibrationRun, price: PriceEntry): Micros {
     cache_creation_input_tokens: (t.cacheWrite5m + t.cacheWrite1h) / n,
     cache_creation: { ephemeral_5m_input_tokens: t.cacheWrite5m / n, ephemeral_1h_input_tokens: t.cacheWrite1h / n },
   };
-  return observedLlmCost(price, perCall) * n;
+  return observedLlmCost(price, perCall, onDate) * n;
 }
 
 export function coverage(runs: CalibrationRun[]): Coverage {
@@ -196,13 +282,17 @@ export function coverage(runs: CalibrationRun[]): Coverage {
 
 const confidenceFor = (n: number): Confidence => (n >= HIGH_CONFIDENCE_RUNS ? 'high' : 'medium');
 
+interface BuildOptions extends LoopOptions { retryRate: number }
+
 function buildLine(
   feature: FeatureRequest, model: PriceEntry, runs: CalibrationRun[], probe: Micros | undefined,
-  priceIsAssumption: boolean,
+  priceIsAssumption: boolean, opts: BuildOptions,
 ): CostLine {
+  const costOn = (r: CalibrationRun) => runCostOn(r, model, opts.onDate);
   const sameType = runs.filter((r) => r.featureType === feature.type);
   const base = {
     label: `Build: ${feature.name}`,
+    phase: 'build' as const,
     category: 'usage_based' as const,
     lineClass: 'empirical' as const,
     unit: 'tokens',
@@ -214,7 +304,7 @@ function buildLine(
   if (probe !== undefined) {
     const paired = sameType.filter((r) => r.probeCost !== undefined && r.probeCost > 0);
     if (paired.length >= MIN_CALIBRATION_RUNS) {
-      const ratios = spread(paired.map((r) => runCostOn(r, model) / r.probeCost!));
+      const ratios = spread(paired.map((r) => costOn(r) / r.probeCost!));
       return {
         ...base,
         quantityAssumption:
@@ -237,14 +327,15 @@ function buildLine(
     return {
       ...base,
       quantityAssumption: `P10/P50/P90 of ${sameType.length} logged ${feature.type} runs`,
-      range: spread(sameType.map((r) => runCostOn(r, model))),
+      range: spread(sameType.map(costOn)),
       confidence: confidenceFor(sameType.length),
       warnings,
     };
   }
 
   const prior = PRIOR_LOOP[feature.type];
-  const once = loopCost(model, prior);
+  const once = loopCost(model, prior, opts);
+  const retry = opts.retryRate;
   warnings.push(
     `Only ${sameType.length} logged ${feature.type} runs (need ${MIN_CALIBRATION_RUNS}); range is wide`,
   );
@@ -253,15 +344,78 @@ function buildLine(
     quantityAssumption:
       `Prior: ${prior.turns}-turn cached agent loop, ${prior.baseContext / 1000}K starting context, ` +
       `+${prior.growthPerTurn / 1000}K and ${prior.outputPerTurn / 1000}K output per turn; ` +
-      `${1 + PRIOR_RETRY_RATE} attempts expected`,
+      `${1 + retry} attempts expected${opts.caching === false ? '; no prompt caching' : ''}`,
     range: {
       low: Math.round(once * PRIOR_BAND.low),
-      expected: Math.round(once * (1 + PRIOR_RETRY_RATE)),
+      expected: Math.round(once * (1 + retry)),
       high: Math.round(once * PRIOR_BAND.high),
     },
     confidence: 'low',
     warnings,
   };
+}
+
+const PHASE_LABEL: Record<Phase, string> = {
+  spec: 'Spec', architect: 'Architecture', build: 'Build', review: 'Review',
+};
+
+/** One relay phase other than build, priced from its prior. Review runs once per feature. */
+function phaseLine(
+  phase: Exclude<Phase, 'build'>, model: PriceEntry, features: number, priceIsAssumption: boolean,
+  opts: LoopOptions,
+): CostLine {
+  const prior = PHASE_LOOP[phase];
+  const times = phase === 'review' ? features : 1;
+  const once = loopCost(model, prior, opts) * times;
+  return {
+    label: `${PHASE_LABEL[phase]} on ${model.product}`,
+    phase,
+    category: 'usage_based',
+    lineClass: 'empirical',
+    unit: 'tokens',
+    quantityAssumption:
+      `Prior: ${times > 1 ? `${times} x ` : ''}${prior.turns}-turn pass from a ${BRIEF_TOKENS / 1000}K brief, ` +
+      `${prior.baseContext / 1000}K context, ${prior.outputPerTurn / 1000}K output per turn` +
+      `${opts.caching === false ? '; no prompt caching' : ''}`,
+    range: {
+      low: Math.round(once * PHASE_BAND.low),
+      expected: once,
+      high: Math.round(once * PHASE_BAND.high),
+    },
+    rateSource: model.id,
+    confidence: 'low',
+    priceIsAssumption,
+    warnings: ['No logged runs for this phase yet; range is a prior'],
+  };
+}
+
+/**
+ * Handoffs between consecutive phases: what each next phase would pay to carry the whole
+ * transcript of the one before instead of a brief. Build hands each feature's transcript to
+ * that feature's review.
+ */
+function handoffs(
+  features: FeatureRequest[], models: Record<Phase, PriceEntry>, opts: LoopOptions,
+): HandoffEstimate[] {
+  const buildTranscript = features.reduce((t, f) => t + transcriptTokens(PRIOR_LOOP[f.type]), 0);
+  const avgBuild: LoopPrior = {
+    turns: Math.max(1, Math.round(features.reduce((t, f) => t + PRIOR_LOOP[f.type].turns, 0) / Math.max(1, features.length))),
+    baseContext: 8_000, growthPerTurn: 0, outputPerTurn: 0,
+  };
+  const legs: Array<{ from: Phase; to: Phase; transcript: number; next: LoopPrior; times: number }> = [
+    { from: 'spec', to: 'architect', transcript: transcriptTokens(PHASE_LOOP.spec), next: PHASE_LOOP.architect, times: 1 },
+    // Every feature's build starts from the architect's output.
+    { from: 'architect', to: 'build', transcript: transcriptTokens(PHASE_LOOP.architect), next: avgBuild, times: features.length },
+    { from: 'build', to: 'review', transcript: buildTranscript / Math.max(1, features.length), next: PHASE_LOOP.review, times: features.length },
+  ];
+  return legs.map((l) => ({
+    from: l.from,
+    to: l.to,
+    transcriptTokens: Math.round(l.transcript),
+    briefTokens: BRIEF_TOKENS,
+    saved: carryCost(models[l.to], l.next, l.transcript - BRIEF_TOKENS, opts) * l.times,
+    crossVendor: models[l.from].provider !== models[l.to].provider,
+  }));
 }
 
 function subscriptionLine(
@@ -349,8 +503,39 @@ export function estimate(
   const model = registry.get(input.buildModel);
   const months = horizonMonths[input.horizon];
   const assumed = (id: string) => registry.isAssumption(id, today);
-  const buildLines = input.features.map((f) =>
-    buildLine(f, model, runs, input.probes?.[f.name], assumed(model.id)));
+  const a = input.assumptions ?? {};
+  const loopOpts: LoopOptions = { caching: a.caching ?? true, onDate: a.buildDate ?? today };
+  const buildOpts: BuildOptions = { ...loopOpts, retryRate: a.retryRate ?? PRIOR_RETRY_RATE };
+  const featureLines = input.features.map((f) =>
+    buildLine(f, model, runs, input.probes?.[f.name], assumed(model.id), buildOpts));
+
+  let relay: RelayPlan | undefined;
+  let buildLines = featureLines;
+  if (input.relay) {
+    const models: Record<Phase, PriceEntry> = {
+      spec: registry.get(input.relay.spec),
+      architect: registry.get(input.relay.architect),
+      build: model,
+      review: registry.get(input.relay.review),
+    };
+    const line = (phase: Exclude<Phase, 'build'>) =>
+      phaseLine(phase, models[phase], input.features.length, assumed(models[phase].id), loopOpts);
+    const spec = line('spec');
+    const architect = line('architect');
+    const review = line('review');
+    buildLines = [spec, architect, ...featureLines, review];
+    const legs = handoffs(input.features, models, loopOpts);
+    relay = {
+      phases: PHASES.map((phase) => ({
+        phase,
+        model: models[phase].id,
+        provider: models[phase].provider,
+        range: sum(buildLines.filter((l) => l.phase === phase)),
+      })),
+      handoffs: legs,
+      handoffSavings: legs.reduce((t, h) => t + h.saved, 0),
+    };
+  }
   const traffic = months > 0 ? input.traffic : undefined;
 
   const paths = (['free', 'paid'] as const).map((path): PathPlan => {
@@ -419,7 +604,12 @@ export function estimate(
   return {
     horizon: input.horizon,
     assumptions: [
-      `Build model: ${model.product}`,
+      ...(input.relay
+        ? [`Relay: ${PHASES.map((p) => `${PHASE_LABEL[p].toLowerCase()} on ${relay!.phases.find((x) => x.phase === p)!.model.split('/')[1]}`).join(', ')}`]
+        : [`Build model: ${model.product}`]),
+      ...(a.retryRate !== undefined ? [`Retry rate: ${a.retryRate} extra attempts per feature`] : []),
+      ...(a.caching === false ? ['Prompt caching: off'] : []),
+      ...(a.buildDate && a.buildDate !== today ? [`Build date: ${a.buildDate}`] : []),
       `Commercial use: ${input.commercialUse ? 'yes' : 'no'}`,
       `Horizon: ${input.horizon} (${months} month(s) of hosting)`,
       ...(traffic ? [`Traffic: ${trafficAssumption(traffic)}`] : []),
@@ -432,6 +622,7 @@ export function estimate(
       coverage: coverage(relevant),
     },
     paths,
+    ...(relay ? { relay } : {}),
     disclosures: DISCLOSURES,
   };
 }

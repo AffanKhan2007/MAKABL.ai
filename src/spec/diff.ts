@@ -38,5 +38,9 @@ export function diffSpecs(before: ProjectSpec, after: ProjectSpec): SpecDiff {
   if (before.monthlyVisitors !== after.monthlyVisitors) diff.settings.push('expected traffic');
   if (before.buildModel !== after.buildModel) diff.settings.push('build model');
   if (before.unpricedItems.join('|') !== after.unpricedItems.join('|')) diff.settings.push('unpriced items');
+  const relayKey = (s: ProjectSpec) => (s.relay ? `${s.relay.spec}|${s.relay.architect}|${s.relay.review}` : '');
+  if (relayKey(before) !== relayKey(after)) diff.settings.push('relay models');
+  if ((before.retryRate ?? null) !== (after.retryRate ?? null)) diff.settings.push('retry rate');
+  if ((before.caching ?? true) !== (after.caching ?? true)) diff.settings.push('prompt caching');
   return diff;
 }

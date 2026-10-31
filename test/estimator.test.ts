@@ -6,7 +6,7 @@ import {
   coverage, estimate, loopCost, MIN_CALIBRATION_RUNS, runCostOn, type EstimateInput,
 } from '../src/estimator/estimator.ts';
 import { observedLlmCost } from '../src/gate/llm-cost.ts';
-import { PricingRegistry } from '../src/registry/pricing.ts';
+import { PricingRegistry, ratesOn } from '../src/registry/pricing.ts';
 import { seedPrices } from '../src/registry/seed.ts';
 
 const registry = new PricingRegistry(seedPrices);
@@ -169,4 +169,56 @@ test('verified prices are trusted until their revalidation date, then become ass
   assert.ok(fresh.paths[1].lines.every((l) => !l.priceIsAssumption));
   const stale = estimate(base, registry, [], '2027-02-01');
   assert.ok(stale.paths[1].lines.every((l) => l.priceIsAssumption));
+});
+
+const RELAY = {
+  spec: 'google/gemini-3.1-flash-lite', architect: 'openai/gpt-6.1-sol', review: 'anthropic/claude-haiku-5-5',
+};
+
+test('a relay plan prices each phase on its own model and adds the phases to both paths', () => {
+  const plain = estimate(base, registry, [], TODAY);
+  const relay = estimate({ ...base, relay: RELAY }, registry, [], TODAY);
+  assert.equal(plain.relay, undefined);
+  assert.deepEqual(relay.relay!.phases.map((p) => p.phase), ['spec', 'architect', 'build', 'review']);
+  assert.deepEqual(relay.relay!.phases.map((p) => p.provider), ['google', 'openai', 'anthropic', 'anthropic']);
+  const phaseTotal = relay.relay!.phases.reduce((t, p) => t + p.range.expected, 0);
+  const llmLines = relay.paths[1].lines.filter((l) => l.phase);
+  assert.equal(llmLines.reduce((t, l) => t + l.range!.expected, 0), phaseTotal);
+  // The build phase is unchanged by adding the relay around it.
+  const build = relay.relay!.phases.find((p) => p.phase === 'build')!;
+  assert.equal(build.range.expected, plain.paths[1].lines.filter((l) => l.phase === 'build')
+    .reduce((t, l) => t + l.range!.expected, 0));
+  assert.ok(relay.paths[1].totals.expected > plain.paths[1].totals.expected);
+});
+
+test('handoff briefs save tokens, and cross-vendor handoffs are flagged', () => {
+  const plan = estimate({ ...base, relay: RELAY }, registry, [], TODAY).relay!;
+  assert.equal(plan.handoffs.length, 3);
+  assert.ok(plan.handoffs.every((h) => h.saved > 0 && h.transcriptTokens > h.briefTokens));
+  assert.deepEqual(plan.handoffs.map((h) => h.crossVendor), [true, true, false]);
+  assert.equal(plan.handoffSavings, plan.handoffs.reduce((t, h) => t + h.saved, 0));
+});
+
+test('turning caching off raises the build estimate and the value of a brief', () => {
+  const on = estimate({ ...base, relay: RELAY }, registry, [], TODAY);
+  const off = estimate({ ...base, relay: RELAY, assumptions: { caching: false } }, registry, [], TODAY);
+  assert.ok(off.paths[1].totals.expected > on.paths[1].totals.expected);
+  assert.ok(off.relay!.handoffSavings > on.relay!.handoffSavings);
+  assert.ok(off.assumptions.includes('Prompt caching: off'));
+});
+
+test('the retry rate scales the expected build cost of an uncalibrated feature', () => {
+  const at = (retryRate: number) => estimate({ ...base, assumptions: { retryRate } }, registry, [], TODAY)
+    .paths[1].lines.find((l) => l.label === 'Build: Sign in')!.range!.expected;
+  assert.equal(at(1), Math.round((at(0) * 2)));
+});
+
+test('announced price changes apply from their date', () => {
+  const argon = registry.get('google/gemini-4-argon');
+  assert.equal(ratesOn(argon, '2026-11-30').inputPerMTok, usd(2));
+  assert.equal(ratesOn(argon, '2026-12-01').inputPerMTok, usd(4));
+  const relay = { ...RELAY, architect: 'google/gemini-4-argon' };
+  const cost = (buildDate: string) => estimate({ ...base, relay, assumptions: { buildDate } }, registry, [], TODAY)
+    .relay!.phases.find((p) => p.phase === 'architect')!.range.expected;
+  assert.ok(Math.abs(cost('2026-12-15') - 2 * cost('2026-11-15')) <= 2);
 });

@@ -1,9 +1,15 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import type { CostLine, PathPlan } from '../../../src/estimator/estimator.ts';
+import { PRIOR_RETRY_RATE, type CostLine, type PathPlan } from '../../../src/estimator/estimator.ts';
 import { gate, isRunning } from '../../../src/server/builds.ts';
 import { liveModeStatus } from '../../../src/server/live-mode.ts';
-import { BUILD_MODELS, planFor } from '../../../src/server/plan.ts';
+import {
+  DEFAULT_RELAY, MODELS, modelLabel as labelOf, planFor, presetOf, presetPlans, today,
+} from '../../../src/server/plan.ts';
+import { RETRY_CHOICES, whatIf } from '../../../src/server/what-if.ts';
+import { WhatIf } from './what-if.tsx';
+import { EasyOverview } from './easy.tsx';
+import { getMode } from '../../../src/server/mode.ts';
 import { getProject } from '../../../src/server/projects.ts';
 import { FEATURE_TYPES, money, range, STATE_LABEL } from '../../format.ts';
 import { diffSpecs } from '../../../src/spec/diff.ts';
@@ -30,6 +36,7 @@ const FEATURE_TONE: Record<FeatureStatus, '' | 'good' | 'warn' | 'bad'> = {
   'not started': '', building: 'warn', verified: 'good', failed: 'bad', refused: 'bad',
 };
 import { Feed } from './feed.tsx';
+import { applyWhatIfAction, whatIfAction } from './actions.ts';
 
 export const dynamic = 'force-dynamic';
 
@@ -131,7 +138,13 @@ export default async function ProjectPage({
   const buildExpected = paid.lines.filter((l) => l.unit === 'tokens').reduce((a, l) => a + (l.range?.expected ?? 0), 0);
   const buildHigh = paid.lines.filter((l) => l.unit === 'tokens').reduce((a, l) => a + (l.range?.high ?? 0), 0);
   const suggestedCap = Math.max(1, Math.ceil(buildExpected / 1_000_000) * 2);
-  const modelLabel = BUILD_MODELS.find((m) => m.id === project.spec.buildModel)?.label ?? project.spec.buildModel;
+  const modelLabel = labelOf(project.spec.buildModel);
+  const explore = await whatIf(project.spec, paid.totals.expected, {
+    ...(budget ? { capMicros: budget.projectCap } : {}),
+    live: project.buildMode === 'live',
+  });
+  const easy = (await getMode()) === 'easy';
+  const presets = easy ? await presetPlans(project.spec) : null;
   const cov = plan.calibration.coverage;
   const canBuild = (project.state === 'approved' || project.state === 'paused' || interrupted)
     && approvals.length === 0 && !running && (project.buildMode === 'simulated' || live.available);
@@ -186,7 +199,7 @@ export default async function ProjectPage({
         })}
       </ol>
 
-      <div className="kpis">
+      {!easy && <div className="kpis">
         <div className="kpi">
           <div className="kpi-label">Paid path</div>
           <div className="kpi-value">{money(paid.totals.expected)}</div>
@@ -209,11 +222,15 @@ export default async function ProjectPage({
             ? <div className="bar" aria-label={`${Math.round((spent / budget.projectCap) * 100)}% of cap`}><span style={{ width: `${Math.min(100, (spent / budget.projectCap) * 100)}%` }} /></div>
             : <div className="kpi-note">nothing yet</div>}
         </div>
-      </div>
+      </div>}
 
       {error && <p className="notice bad" role="alert">{error}</p>}
       {project.buildMode === 'simulated' ? (
-        <p className="notice info small">
+        easy ? (
+          <p className="notice info small">
+            <strong>Practice run.</strong> Nothing is charged. Prices show what a real build would cost.
+          </p>
+        ) : <p className="notice info small">
           <strong>Simulated build.</strong> A scripted stand-in plays the model: no API calls, no real money, and
           these runs never feed the estimates. Costs shown are what the same calls would cost.
         </p>
@@ -224,7 +241,10 @@ export default async function ProjectPage({
         </p>
       )}
 
-      <section className="card">
+      {easy && presets ? (
+        <EasyOverview project={project} plan={plan} presets={presets} current={presetOf(project.spec)}
+          conflicts={explore.conflicts} features={report.features} canChange={!running} />
+      ) : <section className="card">
         <h2>Features</h2>
         <p className="muted small" style={{ marginTop: -6 }}>Quoted from the paid path; actual from the ledger.</p>
         <div className="table-wrap">
@@ -266,7 +286,7 @@ export default async function ProjectPage({
             Features not yet verified are expected to cost {money(remaining)} more to build.
           </p>
         )}
-      </section>
+      </section>}
 
       {change && previousPaid && (
         <section className="card stack" style={{ borderColor: 'var(--accent)' }}>
@@ -293,9 +313,12 @@ export default async function ProjectPage({
         </section>
       )}
 
+      {!easy && <>
       <h2 style={{ marginTop: 24 }}>Cost plan</h2>
       <p className="muted small" style={{ marginTop: -6 }}>
-        Covers {HORIZON_TEXT[project.spec.horizon]}, built with {modelLabel}.{' '}
+        Covers {HORIZON_TEXT[project.spec.horizon]}, {project.spec.relay
+          ? <>run as a relay: {labelOf(project.spec.relay.spec)} → {labelOf(project.spec.relay.architect)} → {modelLabel} → {labelOf(project.spec.relay.review)}.</>
+          : <>built with {modelLabel}.</>}{' '}
         {plan.calibration.calibrated
           ? `Build lines use ${plan.calibration.runs} logged runs.`
           : `Build lines are estimates from a model of the build, not yet from real runs (${plan.calibration.runs} logged).`}{' '}
@@ -304,6 +327,26 @@ export default async function ProjectPage({
           ? `not enough data yet (${cov.quotedRuns} quoted builds; 10 needed).`
           : `${Math.round(cov.share * 100)}% of ${cov.quotedRuns} builds landed inside their quoted range.`}
       </p>
+      <WhatIf
+        action={whatIfAction.bind(null, id)}
+        apply={applyWhatIfAction.bind(null, id)}
+        initial={{ result: explore, error: null }}
+        models={MODELS}
+        defaults={{
+          relay: project.spec.relay ?? DEFAULT_RELAY,
+          relayOn: !!project.spec.relay,
+          buildModel: project.spec.buildModel,
+          retryRate: project.spec.retryRate ?? PRIOR_RETRY_RATE,
+          caching: project.spec.caching ?? true,
+          commercialUse: project.spec.commercialUse,
+          horizon: project.spec.horizon,
+          monthlyVisitors: project.spec.monthlyVisitors,
+        }}
+        retryChoices={RETRY_CHOICES}
+        today={today()}
+        canApply={!running}
+        nextVersion={project.specVersion + 1}
+      />
       <div className="grid2">
         {plan.paths.map((p) => <PathCard key={p.path} p={p} />)}
       </div>
@@ -313,10 +356,11 @@ export default async function ProjectPage({
           {plan.disclosures.map((d) => <li key={d}>{d}</li>)}
         </ul>
       </section>
+      </>}
 
       <div className="grid2" style={{ marginTop: 24 }}>
         <section className="card stack">
-          <h2 style={{ margin: 0 }}>Budget</h2>
+          <h2 style={{ margin: 0 }}>{easy ? 'Spending limit' : 'Budget'}</h2>
           {project.state !== 'costed' && budget ? (
             <>
               <div className="row spread"><span className="muted">Project cap</span><span className="num">{money(budget.projectCap)}</span></div>
@@ -331,21 +375,24 @@ export default async function ProjectPage({
           ) : (
             <form action={approvePlanAction.bind(null, id)} className="stack">
               <p className="muted small" style={{ margin: 0 }}>
-                Approving starts nothing. It sets the caps the build must stay under; it pauses and asks
-                before going over.
+                {easy
+                  ? 'This does not start anything. It sets the most the build may spend; it stops and asks before going over.'
+                  : 'Approving starts nothing. It sets the caps the build must stay under; it pauses and asks before going over.'}
               </p>
               <div>
-                <label htmlFor="projectCap">Project cap (USD) <span className="hint">build spend in total</span></label>
+                <label htmlFor="projectCap">{easy ? 'The most you want to spend on building (USD)' : <>Project cap (USD) <span className="hint">build spend in total</span></>}</label>
                 <input id="projectCap" name="projectCap" type="number" min="0.01" max="10000" step="0.01"
                   defaultValue={budget ? budget.projectCap / 1_000_000 : suggestedCap} required />
               </div>
-              <div>
-                <label htmlFor="monthlyCap">Monthly cap (USD)</label>
-                <input id="monthlyCap" name="monthlyCap" type="number" min="0.01" max="10000" step="0.01"
-                  defaultValue={budget ? budget.monthlyCap / 1_000_000 : suggestedCap} required />
-              </div>
+              {easy
+                ? <input type="hidden" name="monthlyCap" value={budget ? budget.monthlyCap / 1_000_000 : suggestedCap} />
+                : <div>
+                  <label htmlFor="monthlyCap">Monthly cap (USD)</label>
+                  <input id="monthlyCap" name="monthlyCap" type="number" min="0.01" max="10000" step="0.01"
+                    defaultValue={budget ? budget.monthlyCap / 1_000_000 : suggestedCap} required />
+                </div>}
               {budget && <p className="muted small" style={{ margin: 0 }}>Spent so far: {money(spent)}. The caps include what is already spent.</p>}
-              <button type="submit">{budget ? 'Approve updated plan' : 'Approve plan and set caps'}</button>
+              <button type="submit">{budget ? 'Approve updated plan' : easy ? 'Looks good, set my limit' : 'Approve plan and set caps'}</button>
             </form>
           )}
         </section>
@@ -411,7 +458,7 @@ export default async function ProjectPage({
         </section>
       )}
 
-      {canChangeMode && (
+      {canChangeMode && !easy && (
         <section className="card stack">
           <h2 style={{ margin: 0 }}>Build mode</h2>
           {project.buildMode === 'live' ? (
@@ -444,7 +491,7 @@ export default async function ProjectPage({
         <section key={a.id} className="card stack" style={{ borderColor: 'var(--bad)' }}>
           <h2 style={{ margin: 0 }}>Approval needed</h2>
           <p style={{ margin: 0 }}>{a.reason}</p>
-          <div className="table-wrap">
+          {!easy && <div className="table-wrap">
             <table>
               <tbody>
                 <tr><th>Blocked task</th><td>{a.blockedTaskId ?? '—'}</td></tr>
@@ -455,7 +502,7 @@ export default async function ProjectPage({
                 <tr><th>Options</th><td><ul style={{ margin: 0, paddingLeft: 18 }}>{a.alternatives.map((x) => <li key={x}>{x}</li>)}</ul></td></tr>
               </tbody>
             </table>
-          </div>
+          </div>}
           <form action={decideApprovalAction.bind(null, id, a.id)} className="row">
             <div style={{ minWidth: 180 }}>
               <label htmlFor={`raise-${a.id}`}>Raise both caps by (USD)</label>
@@ -468,7 +515,7 @@ export default async function ProjectPage({
         </section>
       ))}
 
-      {anyBuilt && (
+      {anyBuilt && !easy && (
         <section className="card stack">
           <h2 style={{ margin: 0 }}>Verification report</h2>
           <p className="muted small" style={{ margin: 0 }}>
@@ -511,9 +558,11 @@ export default async function ProjectPage({
         </section>
       )}
 
-      <Feed projectId={id} />
+      {easy
+        ? <details className="card"><summary className="muted small">Show the live activity log</summary><Feed projectId={id} /></details>
+        : <Feed projectId={id} />}
 
-      {ledger.length > 0 && (
+      {ledger.length > 0 && !easy && (
         <section className="card">
           <h2>Ledger</h2>
           <p className="muted small" style={{ marginTop: -6 }}>Every charge the Budget Gate booked, from system records.</p>

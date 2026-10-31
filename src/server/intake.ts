@@ -1,7 +1,7 @@
 import type { FeatureType } from '../calibration/runs.ts';
 import type { Horizon } from '../domain/types.ts';
 import { parseCriteria } from '../spec/acceptance.ts';
-import { BUILD_MODELS } from './plan.ts';
+import { BUILD_MODELS, DEFAULT_RELAY, PRESETS, withPreset, type PresetId } from './plan.ts';
 import type { ProjectSpec, SpecFeature } from './projects.ts';
 
 // Validates the intake form (FR-01..FR-03) into a project spec. Shared by creating a
@@ -46,16 +46,18 @@ export function parseIntake(form: FormData): { name: string; spec: ProjectSpec }
     return { error: 'Expected monthly visitors must be a whole number up to 100,000,000.' };
   }
 
-  return {
-    name,
-    spec: {
-      idea,
-      features,
-      commercialUse: form.get('commercial') === 'on',
-      horizon,
-      monthlyVisitors: visitors,
-      buildModel,
-      unpricedItems: text(form, 'unpriced').split(',').map((s) => s.trim()).filter(Boolean).slice(0, 10),
-    },
+  const spec: ProjectSpec = {
+    idea,
+    features,
+    commercialUse: form.get('commercial') === 'on',
+    horizon,
+    monthlyVisitors: visitors,
+    buildModel,
+    unpricedItems: text(form, 'unpriced').split(',').map((s) => s.trim()).filter(Boolean).slice(0, 10),
+    // New projects run as a relay; the what-if explorer on the project page changes it.
+    relay: DEFAULT_RELAY,
   };
+  // Easy mode picks a quality level instead of models.
+  const preset = text(form, 'preset');
+  return { name, spec: preset in PRESETS ? withPreset(spec, preset as PresetId) : spec };
 }

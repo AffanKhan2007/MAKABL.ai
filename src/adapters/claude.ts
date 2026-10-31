@@ -103,9 +103,9 @@ export function priceMessage(msg: ClaudeMessage, requested: PriceEntry, registry
   };
 }
 
-/** The LLM entry with the highest output rate: a ceiling for an unknown model. */
+/** The Claude entry with the highest output rate: a ceiling for an unknown Claude model. */
 function maxRatePrice(registry: PricingRegistry): PriceEntry {
-  const llms = registry.llms();
+  const llms = registry.llms().filter((p) => p.provider === 'anthropic');
   if (!llms.length) throw new Error('registry has no LLM prices');
   return llms.reduce((a, b) =>
     (tokenRatesFor(b, 0).outputPerMTok > tokenRatesFor(a, 0).outputPerMTok ? b : a));

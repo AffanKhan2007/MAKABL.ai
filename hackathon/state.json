@@ -61,7 +61,8 @@
       "id": 9,
       "text": "Track record seeded from real live runs (calibration visible)",
       "tier": "should",
-      "status": "open"
+      "status": "cut",
+      "why": "make room for the relay and the what-if explorer"
     },
     {
       "id": 10,
@@ -102,6 +103,54 @@
     {
       "id": 16,
       "text": "Redesign: theme, landing page, app shell, project page, sign-in",
+      "tier": "must",
+      "status": "done"
+    },
+    {
+      "id": 17,
+      "text": "Relay: phase pipeline (spec -> architect -> build -> review), each phase its own model, structured handoff brief + history pointer",
+      "tier": "must",
+      "status": "open"
+    },
+    {
+      "id": 18,
+      "text": "Token negotiator: per-phase token budgets from the cap; models request more with a reason; grant/reassign/escalate via Budget Gate",
+      "tier": "must",
+      "status": "open"
+    },
+    {
+      "id": 19,
+      "text": "Relay timeline UI: model per phase, tokens vs budget, handoff briefs, negotiations, tokens saved by briefs",
+      "tier": "must",
+      "status": "open"
+    },
+    {
+      "id": 20,
+      "text": "Multi-vendor pricing: OpenAI + Gemini models verified from official pages, in the registry",
+      "tier": "must",
+      "status": "done"
+    },
+    {
+      "id": 21,
+      "text": "What-if cost explorer: model per phase, traffic, horizon, retries, caching; instant recompute; apply as new spec version",
+      "tier": "must",
+      "status": "done"
+    },
+    {
+      "id": 22,
+      "text": "Conflicts & shortcomings panel: trade-offs of each choice shown beside the numbers",
+      "tier": "must",
+      "status": "done"
+    },
+    {
+      "id": 23,
+      "text": "Full model catalog: every current text model from Anthropic, OpenAI, Google, pickable per phase",
+      "tier": "must",
+      "status": "done"
+    },
+    {
+      "id": 24,
+      "text": "Easy mode (plain words, presets) and Pro mode (every model and number), switch in top bar",
       "tier": "must",
       "status": "done"
     }

@@ -1,6 +1,7 @@
 import type { FeatureType } from '../calibration/runs.ts';
 import { withTx } from '../db/scope.ts';
 import type { Horizon } from '../domain/types.ts';
+import type { RelayModels } from '../estimator/estimator.ts';
 import { DEFAULT_ACCEPTANCE } from '../spec/acceptance.ts';
 import { db } from './db.ts';
 import { userScope } from './session.ts';
@@ -24,6 +25,11 @@ export interface ProjectSpec {
   monthlyVisitors: number | null;
   buildModel: string;
   unpricedItems: string[];
+  /** Models for the relay phases around the build; null or missing for a build-only plan. */
+  relay?: RelayModels | null;
+  /** Planning assumptions set in the what-if explorer; missing means the estimator default. */
+  retryRate?: number | null;
+  caching?: boolean;
 }
 
 export type ProjectState =

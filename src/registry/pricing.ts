@@ -41,6 +41,19 @@ export interface PriceEntry {
    * and writes) is over `overTokens` pays these rates for all of its tokens.
    */
   longPrompt?: { overTokens: number; rates: TokenRates };
+  /**
+   * Price changes the provider has announced, each applying from its date (inclusive,
+   * ISO date). Later entries win; fields not given keep the base rate.
+   */
+  priceChanges?: Array<{ from: string; rates: Partial<TokenRates>; note?: string }>;
+  /** The listed rate is promotional and the provider has not said what comes after. */
+  promotionalUntil?: string;
+  /** Prompts longer than this have no published price on the source page. */
+  maxPricedPromptTokens?: number;
+  /** preview: may change or be withdrawn; legacy: an older generation; deprecated: being retired. */
+  lifecycle?: 'preview' | 'legacy' | 'deprecated';
+  /** A free usage tier exists; its limits are not on the pricing page. */
+  freeTier?: { note: string };
   /** Usage charges on top of the flat fee. */
   meters?: Meter[];
   /** Monthly usage included in the plan, in each meter's unit. */
@@ -60,10 +73,23 @@ export interface PriceEntry {
   revalidateAfter: string | null;
 }
 
-/** The token rates that apply to one request with `promptTokens` of total input. */
-export function tokenRatesFor(price: PriceEntry, promptTokens: number): TokenRates {
+/** The rates in force on `onDate` (ISO date), applying announced price changes. */
+export function ratesOn(price: PriceEntry, onDate?: string): PriceEntry['rates'] {
+  if (!onDate || !price.priceChanges?.length) return price.rates;
+  let rates = price.rates;
+  for (const change of [...price.priceChanges].sort((a, b) => a.from.localeCompare(b.from))) {
+    if (change.from <= onDate) rates = { ...rates, ...change.rates };
+  }
+  return rates;
+}
+
+/**
+ * The token rates that apply to one request with `promptTokens` of total input, on
+ * `onDate` if given (for announced price changes).
+ */
+export function tokenRatesFor(price: PriceEntry, promptTokens: number, onDate?: string): TokenRates {
   if (price.longPrompt && promptTokens > price.longPrompt.overTokens) return price.longPrompt.rates;
-  const r = price.rates;
+  const r = ratesOn(price, onDate);
   if (r.inputPerMTok === undefined || r.outputPerMTok === undefined) {
     throw new Error(`${price.id} has no token rates`);
   }

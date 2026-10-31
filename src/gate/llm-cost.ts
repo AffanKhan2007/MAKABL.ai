@@ -34,12 +34,12 @@ export function worstCaseLlmCost(
   return Math.ceil((perMTok(promptTokens, inRate) + perMTok(maxOutputTokens, r.outputPerMTok)) / 1_000_000);
 }
 
-/** Observed cost from a response's usage fields. */
-export function observedLlmCost(price: PriceEntry, usage: LlmUsage): Micros {
+/** Observed cost from a response's usage fields, at the rates in force on `onDate` if given. */
+export function observedLlmCost(price: PriceEntry, usage: LlmUsage, onDate?: string): Micros {
   const written = usage.cache_creation_input_tokens ?? 0;
   const read = usage.cache_read_input_tokens ?? 0;
   // The prompt-length tier counts every input token, cache reads and writes included.
-  const r: TokenRates = tokenRatesFor(price, usage.input_tokens + written + read);
+  const r: TokenRates = tokenRatesFor(price, usage.input_tokens + written + read, onDate);
 
   // Without the per-lifetime breakdown we cannot tell 5m from 1h writes, so price them
   // all at the 1h rate: the figure may be high, never low.

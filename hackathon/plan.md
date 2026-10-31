@@ -5,9 +5,23 @@ Submit by Sun 09:53. Track with `py -I <skill>/scripts/hack.py status` (state in
 
 ## Pitch (one sentence)
 
-For freelancers and small teams building web apps with AI, MAKABL shows what the build and
-the first months will cost **before** anything is built, then builds it under a hard cap and
-pauses to ask before going over.
+For freelancers and small teams building web apps with AI, MAKABL runs the build as a
+**cost-aware relay of AI models**: each phase goes to the right model with its own token
+budget, models hand off compact briefs and negotiate for more tokens, and nothing crosses
+your cap without asking.
+
+### The differentiator, in four parts
+
+1. **Right model per phase.** Spec on a fast cheap model, architecture and build on a strong
+   one, review on a cheap one.
+2. **Structured handoffs.** A finishing model writes a brief (decisions, files, open
+   questions, pointer to its full history); the next model starts from the brief, not the
+   raw transcript. The UI shows the tokens this saves.
+3. **Token negotiator.** Per-phase budgets carved from the cap. A model that needs more asks,
+   with a reason; the negotiator grants from slack, reassigns from an under-spent phase, or
+   escalates to the user through the Budget Gate.
+4. **Checkpoints between phases.** Our verification gates decide whether a handoff is
+   accepted, which answers the research on multi-agent handoff failures.
 
 ## Rules
 
@@ -35,29 +49,33 @@ Rubric fit (to re-check once the real criteria arrive):
 ## Demo path (90 seconds, 7 steps)
 
 1. Signed in; open **New project**, the inventory-tracker idea is ready. *(5s)*
-2. **Get the cost plan**: free path blocked for client work, paid path as a range, unpriced
-   items listed, every line with confidence. **Wow #1.** *(20s)*
-3. Approve with a **$1 cap**. *(5s)*
-4. **Start build**: the live feed fills as features build and pass checks. *(15s)*
-5. The **Budget Gate pauses** before the cap would be crossed, with the approval card.
-   **Wow #2.** *(15s)*
-6. Approve a raise; it resumes and finishes: estimate vs actual per feature, and the
-   verification report listing what was *not* checked. *(20s)*
-7. Close: one line on calibration, real runs make the ranges tighter. *(10s)*
+2. **Get the cost plan**, now per phase and per model: free path blocked for client work,
+   paid path as a range. **Wow #1.** *(15s)*
+3. Approve with a cap. **Start**: the relay timeline lights up, spec model → architect →
+   builders → reviewer, each with its token budget. *(15s)*
+4. A **handoff brief** opens: what the spec model passed to the architect, and the tokens
+   it saved versus sending the whole history. *(15s)*
+5. **Negotiation**: the builder asks for more tokens with a reason; the negotiator moves
+   budget from the under-spent review phase. **Wow #2.** *(15s)*
+6. Over the cap → the **Budget Gate pauses** and asks; approve; it finishes and the app
+   **opens**. *(15s)*
+7. Close: estimate vs actual per phase, and the verification report. *(10s)*
 
 Honesty rule: simulated builds are labelled on screen. A live (real Claude) build is shown
 only if the spike succeeds, and its cost is real.
 
 ## Team: 4 people, 4 laptops (no VM)
 
-| Laptop | Owner role | Owns |
-|---|---|---|
-| **L1 Demo + integration** | Integrator | The `master` branch, the demo database, the public URL (#13), merges. The only machine the demo runs on. |
-| **L2 Build machine** | Live-build owner | The live-build spike (#1), then #14, #8, #9. Live builds run here, so model-written code never runs on the demo laptop. Use the laptop with the least personal data on it. |
-| **L3 Product + design** | UI owner | Hero first screen (#3), demo seed data (#4), first-screen polish in HARDEN. |
-| **L4 Story** | Demo + pitch owner | Rubric and rules, demo script (#5), deck and pitch (#6), Q&A sheet, the fallback video. Starts now, not at hour 20. |
+Each person's roles, duties and day are in `hackathon/team/` (one file each).
 
-Rules: everyone works on a short branch and merges to `master` through L1. Ten-minute sync
+| Laptop | Who | Owner role | Owns |
+|---|---|---|---|
+| **L1 Demo + integration** | Affan | Integrator | The `main` branch, the demo database, the public URL (#13), merges. The only machine the demo runs on. |
+| **L2 Build machine** | Nishant | Live-build owner, backup laptop (Claude Pro) | The live-build spike (#1), then #14, #8, #9. Live builds run here, so model-written code never runs on the demo laptop. Use the laptop with the least personal data on it. |
+| **L3 Product + design** | Sanjana | UI owner, Easy mode | Hero first screen (#3), demo seed data (#4), first-screen polish in HARDEN. |
+| **L4 Story** | Shuja | Demo + pitch owner | Rubric and rules, demo script (#5), deck and pitch (#6), Q&A sheet, the fallback video. Starts now, not at hour 20. |
+
+Rules: everyone works on a short branch and merges to `main` through L1. Ten-minute sync
 every two hours (13:00, 15:00, 17:00, 19:00, 21:00, 23:00, 01:00). A laptop is not a sandbox:
 say so if a judge asks.
 
