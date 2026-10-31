@@ -30,6 +30,7 @@ Honest status, as of 1 Nov 2026:
 | Cost estimator: per phase, per model, ranges, free vs paid path, what-if explorer | Working. Ranges come from modelled priors until 10+ real runs per feature type are logged; the app says so |
 | Relay execution: spec → architect → build → review with handoff briefs | **Ran end to end, live, on Gemini's free tier.** All four phases finished, with briefs (36%, 74% and 95% fewer tokens than the full history), negotiator decisions recorded in the event log, and a reviewer's verdict |
 | Live view of the build | The generated app runs in a dev server while the models write it and is embedded on the project page (hot reload does the updating); it stops with the build. Verified on a real generated app; the embedded view itself has not yet been watched during a full build |
+| Renders | A model draws each page as a mockup, shown in a sandboxed frame (desktop or phone). The user asks for changes in words and gets a new version; every version is kept with its model, tokens and cost. Verified live: two versions of a cafe page, $0.007 and $0.008 |
 | Token negotiator | Working and tested; live run returned unspent allowance from the spec and architect phases |
 | Budget Gate: reserve, settle, caps, approvals, replay after restart | Working and tested |
 | Gemini adapter | Live-tested. Free-tier quotas are small (20 requests/day for Gemini 3.6 Flash), so a full build may need a paid key |

@@ -51,13 +51,14 @@ export class RelayCaller implements ModelCaller {
   private readonly adapters: Partial<Record<string, ClaudeAdapter>>;
   private readonly registry: PricingRegistry;
   private readonly negotiator: Negotiator;
-  private readonly onDecision: (d: Decision) => Promise<void>;
+  private readonly onDecision: (d: Decision, before: ReturnType<Negotiator['snapshot']>) => Promise<void>;
+  private readonly used = new Map<Phase, { input: number; output: number; calls: number }>();
 
   constructor(opts: {
     adapters: Partial<Record<string, ClaudeAdapter>>;
     registry: PricingRegistry;
     negotiator: Negotiator;
-    onDecision: (d: Decision) => Promise<void>;
+    onDecision: (d: Decision, before: ReturnType<Negotiator['snapshot']>) => Promise<void>;
   }) {
     this.adapters = opts.adapters;
     this.registry = opts.registry;
@@ -77,11 +78,12 @@ export class RelayCaller implements ModelCaller {
     const worstCase = worstCaseLlmCost(price, promptTokens, c.maxTokens, c.cache ?? '5m');
     const snap = this.negotiator.phases.get(phase);
     const left = snap ? snap.allowance - snap.spent : 0;
+    const before = this.negotiator.snapshot();
     const decision = this.negotiator.request(
       phase, worstCase,
       `${c.description} could cost up to ${usd(worstCase)}; the ${phase} phase has ${usd(Math.max(0, left))} left`,
     );
-    if (decision) await this.onDecision(decision);
+    if (decision) await this.onDecision(decision, before);
 
     let msg: ClaudeMessage;
     try {
@@ -93,7 +95,15 @@ export class RelayCaller implements ModelCaller {
       throw err;
     }
     this.negotiator.spend(phase, priceMessage(msg, price, this.registry, price.provider).cost);
+    const t = tokensOf(msg);
+    const u = this.used.get(phase) ?? { input: 0, output: 0, calls: 0 };
+    this.used.set(phase, { input: u.input + t.input, output: u.output + t.output, calls: u.calls + 1 });
     return msg;
+  }
+
+  /** Tokens read and written so far by a phase, across every call it made. */
+  usage(phase: Phase): { input: number; output: number; calls: number } {
+    return this.used.get(phase) ?? { input: 0, output: 0, calls: 0 };
   }
 }
 

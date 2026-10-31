@@ -1692,3 +1692,47 @@ input:disabled, textarea:disabled, select:disabled {
 .pw .wizard-progress-step { min-width: 0; flex: 1; }
 .pw .wizard-progress-label { font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 520px) { .pw .wizard-step-count { display: none; } }
+.pw .wizard-progress ol { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
+
+/* ---------- renders page ---------- */
+.renders-page { display: grid; gap: 18px; }
+.renders-page > h1, .renders-page > .sub { margin-bottom: 0; }
+.seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 999px; padding: 2px; gap: 2px; background: var(--surface-2); }
+.seg button { background: transparent; color: var(--muted); border: 0; border-radius: 999px; padding: 5px 14px; font-size: 13px; font-weight: 560; box-shadow: none; background-image: none; }
+.seg button[aria-selected=true] { background: var(--accent-soft); color: var(--accent); }
+.seg button:hover { color: var(--text); filter: none; transform: none; }
+
+.render-stage { position: relative; display: grid; place-items: start center; padding: 18px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: repeating-linear-gradient(45deg, var(--surface-2), var(--surface-2) 12px, var(--surface) 12px, var(--surface) 24px); overflow: hidden; min-height: 320px; }
+.render-frame { width: 100%; background: #ffffff; border: 1px solid var(--border-strong); border-radius: 10px; box-shadow: var(--shadow); overflow: hidden; transition: width var(--dur-slow) var(--ease-enter); }
+.render-stage.phone .render-frame { width: 390px; max-width: 100%; border-radius: 28px; border-width: 6px; }
+.render-frame iframe { display: block; width: 100%; height: 560px; border: 0; background: #ffffff; }
+.render-stage.phone .render-frame iframe { height: 640px; }
+.render-empty { display: grid; gap: 6px; place-items: center; align-content: center; min-height: 280px; text-align: center; color: var(--text-2); }
+.render-scan { position: absolute; left: 0; right: 0; top: 0; height: 3px; background: linear-gradient(90deg, transparent, var(--accent), transparent); opacity: 0.9; }
+.render-stage.drawing .render-frame { opacity: 0.55; }
+.render-meta { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.render-asked { color: var(--text-2); }
+.render-versions { display: flex; flex-wrap: wrap; gap: 8px; }
+.version { display: grid; gap: 0; text-align: left; padding: 6px 12px; border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text-2); border: 1px solid var(--border-strong); box-shadow: none; background-image: none; white-space: nowrap; }
+.version small { color: var(--muted); font-size: 11px; }
+.version[aria-selected=true] { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.version:hover { filter: none; transform: none; border-color: var(--accent); }
+.render-ask { display: grid; gap: 10px; }
+.render-ask label { margin: 0; }
+.render-ask select { width: auto; min-width: 140px; }
+.wireframe { white-space: pre-wrap; margin: 0; padding: 14px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); overflow-x: auto; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .render-frame { animation: render-in var(--dur-slow) var(--ease-enter) both; }
+  .render-stage.drawing .render-frame { transition: opacity var(--dur-base) var(--ease-standard); }
+  .render-scan { animation: render-scan 1.4s var(--ease-standard) infinite; }
+  .version { transition: border-color var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard), background-color var(--dur-fast) var(--ease-standard); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .render-frame { animation: fade-in var(--dur-base) var(--ease-standard) both; }
+  .render-scan { top: auto; bottom: 0; }
+}
+@keyframes render-in { from { opacity: 0; transform: scale(0.985) translateY(6px); } }
+@keyframes render-scan { from { transform: translateY(0); } to { transform: translateY(560px); } }
+@media (max-width: 640px) { .render-stage { padding: 10px; } .render-frame iframe { height: 460px; } }

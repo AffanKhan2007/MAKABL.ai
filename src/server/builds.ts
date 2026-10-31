@@ -159,6 +159,15 @@ function writtenFiles(evts: ActivityEvent[], taskId: string): string[] {
   return [...new Set(paths)].slice(-4);
 }
 
+/** One Gate-protected adapter per vendor whose key is configured on this server. */
+export function buildAdapters(gate: BudgetGate): Partial<Record<string, ClaudeAdapter>> {
+  const adapters: Partial<Record<string, ClaudeAdapter>> = {};
+  for (const p of ['anthropic', 'google', 'openai']) {
+    if (liveModeStatus(process.env, p).available) adapters[p] = new ClaudeAdapter(gate, registry, liveSetup(p).transport, p);
+  }
+  return adapters;
+}
+
 async function runBuild(projectId: string, userId: string): Promise<void> {
   const scope = await userScope(userId);
   const project = await getProject(projectId, userId);
@@ -177,10 +186,7 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
 
   // One adapter per vendor whose key is configured. A relay phase on any other vendor runs
   // on the build model instead, and the substitution is recorded.
-  const adapters: Partial<Record<string, ClaudeAdapter>> = {};
-  for (const p of ['anthropic', 'google', 'openai']) {
-    if (liveModeStatus(process.env, p).available) adapters[p] = new ClaudeAdapter(gate, registry, liveSetup(p).transport, p);
-  }
+  const adapters = buildAdapters(gate);
 
   // Not running in this process (startBuild checked), so any reservation still held is
   // from a build that was cut off; settle those before carrying on.
@@ -218,10 +224,11 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
   const negotiator = Negotiator.fromPlan(budget.projectCap, expected);
   await once('budget', 'relay_budget', null, { cap: budget.projectCap, ...negotiator.snapshot() });
   let decisionNo = 0;
-  const onDecision = (d: Decision) =>
-    once(`negotiation:${decisionNo++}`, 'negotiation', null, { ...d, after: negotiator.snapshot() });
+  const onDecision = (d: Decision, before: ReturnType<Negotiator['snapshot']>) =>
+    once(`negotiation:${decisionNo++}`, 'negotiation', null, { ...d, before, after: negotiator.snapshot() });
   // A Gemini model whose free quota runs out mid-build hands its calls to the next one.
-  const caller = new FallbackCaller(new RelayCaller({ adapters, registry, negotiator, onDecision }), (s) =>
+  const relayCaller = new RelayCaller({ adapters, registry, negotiator, onDecision });
+  const caller = new FallbackCaller(relayCaller, (s) =>
     events.append({
       projectId, taskId: null, type: 'relay_substituted',
       payload: { phase: phaseOfTask(s.taskId), planned: s.from, used: s.to, reason: s.reason },
@@ -237,11 +244,12 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
     return buildModel;
   };
   const finishPhase = async (phase: Phase, model: string, extra: Record<string, unknown> = {}) => {
+    const before = negotiator.snapshot();
     const d = negotiator.finish(phase);
-    if (d) await onDecision(d);
+    if (d) await onDecision(d, before);
     await once(`finished:${phase}`, 'relay_phase_finished', null, {
       // The model that last ran the phase, after any quota or overload switch.
-      phase, model: caller.current(model) ?? model, spent: negotiator.phases.get(phase)?.spent ?? 0, ...extra,
+      phase, model: caller.current(model) ?? model, spent: negotiator.phases.get(phase)?.spent ?? 0, usage: relayCaller.usage(phase), ...extra,
     });
   };
   const pause = () => setProjectState(projectId, 'paused', userId);

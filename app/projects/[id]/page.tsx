@@ -205,6 +205,7 @@ export default async function ProjectPage({
       <div className="row small" style={{ margin: '10px 0 18px' }}>
         <span className="muted num">spec v{project.specVersion}</span>
         {!running && <Link href={`/projects/${id}/edit`}>Change the spec</Link>}
+        <Link href={`/projects/${id}/renders`}>{easy ? 'See how it will look' : 'Wireframe & renders'}</Link>
         <a href={`/api/projects/${id}/export`}>Export (zip)</a>
       </div>
 

@@ -21,7 +21,8 @@
     "db:reset": "node scripts/db-reset.ts",
     "db:reset:test": "node scripts/db-reset.ts --test",
     "db:seed": "node scripts/seed-dev-user.ts",
-    "db:seed:demo": "node scripts/seed-demo.ts"
+    "db:seed:demo": "node scripts/seed-demo.ts",
+    "db:patch": "node scripts/db-patch.ts"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
