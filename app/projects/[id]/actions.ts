@@ -9,6 +9,8 @@ import { db } from '../../../src/server/db.ts';
 import { liveModeStatus } from '../../../src/server/live-mode.ts';
 import { planFor } from '../../../src/server/plan.ts';
 import { purgeProject } from '../../../src/server/purge.ts';
+import { startPreview, stopPreview } from '../../../src/build/preview.ts';
+import { workspaceDir } from '../../../src/server/paths.ts';
 import { getProject, recordPlanApproval, setBuildMode, setProjectState } from '../../../src/server/projects.ts';
 import { currentUserId, userScope } from '../../../src/server/session.ts';
 
@@ -25,6 +27,24 @@ function dollars(form: FormData, key: string, max: number): number | null {
   return Number.isFinite(n) && n > 0 && n <= max ? usd(n) : null;
 }
 
+/** Run the app a live build produced (#15); waits until it answers or fails. */
+export async function startPreviewAction(projectId: string): Promise<void> {
+  const project = await getProject(projectId);
+  if (!project) return back(projectId, 'Project not found.');
+  if (project.buildMode !== 'live') return back(projectId, 'Only live builds produce an app to run.');
+  if (isRunning(projectId)) return back(projectId, 'Wait for the build to finish first.');
+  const p = await startPreview(projectId, workspaceDir(projectId));
+  revalidatePath(`/projects/${projectId}`);
+  back(projectId, p.status === 'running' ? undefined : 'The app did not start. Its output is shown below.');
+}
+
+export async function stopPreviewAction(projectId: string): Promise<void> {
+  if (!(await getProject(projectId))) return back(projectId, 'Project not found.');
+  stopPreview(projectId);
+  revalidatePath(`/projects/${projectId}`);
+  back(projectId);
+}
+
 /** Delete the project and everything recorded about it (NFR-11), after typed confirmation. */
 export async function deleteProjectAction(projectId: string, form: FormData): Promise<void> {
   const project = await getProject(projectId);
@@ -33,6 +53,7 @@ export async function deleteProjectAction(projectId: string, form: FormData): Pr
   if (String(form.get('confirm') ?? '').trim() !== project.name) {
     return back(projectId, 'Type the project name exactly to confirm deletion.');
   }
+  stopPreview(projectId);
   await purgeProject(projectId);
   revalidatePath('/projects');
   redirect('/projects');

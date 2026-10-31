@@ -10,8 +10,10 @@ import { diffSpecs } from '../../../src/spec/diff.ts';
 import { getSpecVersion } from '../../../src/server/projects.ts';
 import { userScope } from '../../../src/server/session.ts';
 import { loadReport, type FeatureStatus } from '../../../src/server/verification.ts';
+import { previewOf } from '../../../src/build/preview.ts';
 import {
   approvePlanAction, decideApprovalAction, deleteProjectAction, setBuildModeAction, startBuildAction,
+  startPreviewAction, stopPreviewAction,
 } from './actions.ts';
 
 const STEPS = ['Plan', 'Approve', 'Build', 'Verified'] as const;
@@ -136,6 +138,9 @@ export default async function ProjectPage({
   const canChangeMode = !running && ledger.length === 0;
   const scope = await userScope();
   const report = await loadReport(project, scope);
+  const preview = previewOf(id);
+  const appBuilt = project.buildMode === 'live' && report.features.length > 0
+    && report.features.every((f) => f.status === 'verified');
 
   // FR-15: estimate vs actual per feature, from the ledger (system records only).
   const spentByTask = new Map<string, number>();
@@ -372,6 +377,39 @@ export default async function ProjectPage({
           )}
         </section>
       </div>
+
+      {anyBuilt && (
+        <section className="card stack">
+          <div className="row spread">
+            <h2 style={{ margin: 0 }}>Your app</h2>
+            {preview && <span className={`badge ${preview.status === 'running' ? 'good' : preview.status === 'failed' ? 'bad' : ''}`}>{preview.status}</span>}
+          </div>
+          {project.buildMode === 'simulated' ? (
+            <p className="muted small" style={{ margin: 0 }}>
+              Simulated builds write placeholder files, so there is no app to run. A live build makes a real Next.js app
+              you can open from here.
+            </p>
+          ) : !appBuilt ? (
+            <p className="muted small" style={{ margin: 0 }}>The app can be opened once every feature has passed its checks.</p>
+          ) : preview?.status === 'running' && preview.url ? (
+            <div className="row">
+              <a href={preview.url} target="_blank" rel="noreferrer" className="button">Open the app ↗</a>
+              <span className="num muted small">{preview.url}</span>
+              <form action={stopPreviewAction.bind(null, id)}><button type="submit" className="secondary small">Stop</button></form>
+            </div>
+          ) : (
+            <form action={startPreviewAction.bind(null, id)} className="stack">
+              <p className="muted small" style={{ margin: 0 }}>
+                Runs the generated app on this computer so you can click through it. It gets no API keys.
+              </p>
+              <div><button type="submit">Run the app</button></div>
+            </form>
+          )}
+          {preview?.status === 'failed' && preview.log && (
+            <pre className="mono small" style={{ whiteSpace: 'pre-wrap', margin: 0, maxHeight: 200, overflow: 'auto' }}>{preview.log.slice(-1500)}</pre>
+          )}
+        </section>
+      )}
 
       {canChangeMode && (
         <section className="card stack">

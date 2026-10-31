@@ -1,5 +1,5 @@
+import { workspaceDir } from './paths.ts';
 import { rm } from 'node:fs/promises';
-import { join } from 'node:path';
 import { db } from './db.ts';
 
 // Delete a project and everything recorded about it (NFR-11). Runs as the login role,
@@ -45,5 +45,5 @@ export async function purgeProject(projectId: string): Promise<void> {
   } finally {
     c.release();
   }
-  await rm(join(process.cwd(), '.workspaces', projectId), { recursive: true, force: true });
+  await rm(workspaceDir(projectId), { recursive: true, force: true });
 }

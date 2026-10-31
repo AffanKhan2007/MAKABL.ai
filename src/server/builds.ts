@@ -1,5 +1,5 @@
+import { workspaceDir } from './paths.ts';
 import Anthropic from '@anthropic-ai/sdk';
-import { join } from 'node:path';
 import { ClaudeAdapter, sdkTransport, type ClaudeTransport } from '../adapters/claude.ts';
 import { BUILDER_SYSTEM_PROMPT, FeatureBuilder } from '../build/build-loop.ts';
 import { INSTALL_COMMAND, LIVE_CHECKS, TEMPLATE_GUIDE, writeTemplate } from '../build/template.ts';
@@ -146,7 +146,7 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
   const events = new PgEventLog(db(), scope);
   const mode = project.buildMode === 'live' ? liveSetup() : simulatedSetup();
   const adapter = new ClaudeAdapter(gate, registry, mode.transport);
-  const workspace = new Workspace(join(process.cwd(), '.workspaces', projectId));
+  const workspace = new Workspace(workspaceDir(projectId));
 
   // Not running in this process (startBuild checked), so any reservation still held is
   // from a build that was cut off; settle those before carrying on.

@@ -1,4 +1,4 @@
-import { join } from 'node:path';
+import { workspaceDir } from './paths.ts';
 import { Workspace } from '../build/workspace.ts';
 import { withTx, type DbScope } from '../db/scope.ts';
 import { zip, type ZipEntry } from '../util/zip.ts';
@@ -45,7 +45,7 @@ export async function exportProject(project: Project, scope: DbScope): Promise<B
     },
   ];
 
-  const ws = new Workspace(join(process.cwd(), '.workspaces', project.id));
+  const ws = new Workspace(workspaceDir(project.id));
   let bytes = 0;
   for (const file of await ws.list('.').catch(() => [] as string[])) {
     const text = await ws.read(file).catch(() => null);
