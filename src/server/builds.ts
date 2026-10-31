@@ -304,7 +304,8 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
         const files: Array<{ path: string; content: string }> = [];
         for (const path of writtenFiles(await events.list(projectId), taskId)) {
           const content = await workspace.read(path).catch(() => '');
-          if (content) files.push({ path, content: content.slice(0, 4_000) });
+          if (content) files.push({ path, content: content.length > 12_000 ? `${content.slice(0, 12_000)}
+[clipped by MAKABL at 12,000 characters; the file continues]` : content });
         }
         const prompt = reviewPrompt({ feature: feature.name, acceptance: feature.acceptance, checks: out.checks, files });
         const t = out.run.tokens;

@@ -62,9 +62,11 @@ Rubric fit (to re-check once the real criteria arrive):
 7. Close: estimate vs actual per phase, and the verification report. *(10s)*
 
 Honesty rule: there is no simulated build any more; every build calls a real model. What ran
-live (1 Nov): the relay on Gemini's free tier, with spec and architect briefs, handoffs and
-negotiator decisions recorded. What has not: a generated app passing every check end to end
-(free-tier quota), and OpenAI or Claude live calls (no paid keys). Say exactly this.
+live (31 Oct): the full relay on Gemini's free tier, all four phases, and one generated app
+(a cafe specials page) that passed type check, tests, production build and the project
+checks on the first attempt for $0.02. Known flaw: the model added a login wall nobody asked
+for and its reviewer approved it. What has not run: OpenAI or Claude live calls (no paid
+keys), and a sandbox. Say exactly this.
 
 Free-tier warning: Gemini 3.6 Flash allows 20 requests a day and the quota resets around
 13:30 IST, after the event ends. Do not spend it on practice; record one good run as the

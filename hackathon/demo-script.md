@@ -43,8 +43,9 @@ others only talk.**
    and Pro, the Budget Gate, and the relay on Gemini's free tier with briefs and negotiator
    decisions recorded.
 2. **Built and tested, not run live:** Claude and OpenAI/OpenRouter calls (no paid keys yet).
-3. **Not done:** a generated app passing every check end to end on the free tier (the free
-   quota ran out); a sandbox for generated code.
+3. **Not done:** a sandbox for generated code; Claude and OpenAI live runs. A generated app
+   did pass every check once (cafe specials, $0.02), with one known flaw: an unrequested
+   login wall that the reviewer approved.
 
 ## Fallback video (record once, early)
 

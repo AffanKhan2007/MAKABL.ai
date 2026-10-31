@@ -21,13 +21,15 @@ budget between models mid-build, and a gate that reserves worst-case cost before
 
 ## About whether it works
 
-**Is the relay real?** Yes, it ran live on Gemini's free tier: a spec brief, an architect plan
-built from only that brief, handoffs that carried 32% and 44% fewer tokens than the full
-history, and negotiator decisions, all in the event log.
+**Is the relay real?** Yes, it ran end to end live on Gemini's free tier: a spec brief, an
+architect plan from only that brief, a builder, and a reviewer. Handoffs carried 36%, 74% and
+95% fewer tokens than the full history, and the negotiator's decisions are in the event log.
 
-**Did it build a working app?** Not end to end yet. A run's checks failed with the smallest
-model, and the next run hit Google's free daily quota (20 requests). A paid key would let us
-show a full build; we say so rather than fake it.
+**Did it build a working app?** Yes, once, on Gemini's free tier: a one-page cafe specials site
+that passed its type check, its own tests and the production build on the first attempt, for
+$0.02 of a $2.00 cap. It also added a login wall nobody asked for, and the small reviewer model
+approved it. We report that rather than hide it. Earlier runs failed (wrong imports, then the
+free daily quota), so one success is not a success rate.
 
 **How accurate are the estimates?** They are ranges, wide on purpose. Until 10+ real runs per
 feature type are logged they come from a modelled prior, and the app says that on screen. The
@@ -36,8 +38,9 @@ first real runs started the track record this weekend.
 **Where do the prices come from?** The three vendors' official pricing pages, checked on
 31 Oct, with a re-check date after which the app marks them as unverified.
 
-**Does the savings claim (briefs) hold?** Measured on one real run: 32% and 44% fewer tokens
-passed between phases. One run is not a benchmark; we have no averages yet.
+**Does the savings claim (briefs) hold?** Measured on one real run: the review phase got a
+1.9K-token brief instead of 42K of build history. One run is not a benchmark; we have no
+averages yet.
 
 ## About safety and money
 

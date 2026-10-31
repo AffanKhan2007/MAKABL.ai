@@ -10,7 +10,7 @@
       "id": 1,
       "text": "SPIKE: one real live build (1 feature, Sonnet, $2 cap) - proves it really builds",
       "tier": "must",
-      "status": "open"
+      "status": "done"
     },
     {
       "id": 2,
