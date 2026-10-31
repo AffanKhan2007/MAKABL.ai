@@ -1,7 +1,7 @@
 import { DEFAULT_ACCEPTANCE } from '../../../src/spec/acceptance.ts';
 import { FEATURE_ROWS } from '../../../src/server/intake.ts';
 import { getMode } from '../../../src/server/mode.ts';
-import { BUILD_MODELS, PRESETS } from '../../../src/server/plan.ts';
+import { PICKER_MODELS, PRESETS } from '../../../src/server/plan.ts';
 import { requireUser } from '../../../src/server/session.ts';
 import { createFromPromptAction, createProjectAction } from './actions.ts';
 import { EasyIntake } from './easy-intake.tsx';
@@ -29,7 +29,7 @@ export default async function NewProject() {
         </>
       ) : (
         <>
-          <IntakeForm action={createProjectAction} rows={FEATURE_ROWS} models={BUILD_MODELS}
+          <IntakeForm action={createProjectAction} rows={FEATURE_ROWS} models={PICKER_MODELS}
             defaults={DEFAULT_ACCEPTANCE} submitLabel="Get the cost plan" presets={PRESETS} />
           <details className="pw-alt">
             <summary>Start from a single prompt instead</summary>

@@ -109,4 +109,10 @@ export const TEMPLATE_GUIDE = [
   'Write tests for your feature in tests/<name>.test.ts using node:test and node:assert/strict.',
   'Tests run on Node directly, so import modules with explicit .ts extensions (e.g. ../lib/items.ts).',
   'Put logic you test in lib/; keep React components thin. Do not add dependencies.',
+  // Saves the exploring turns: a fresh project is known, so there is nothing to look up.
+  'A fresh project already has package.json (scripts: typecheck, test, build), app/layout.tsx (a root layout without styles; import ./globals.css there),',
+  'app/page.tsx (a placeholder heading), lib/health.ts and tests/smoke.test.ts. Do not list or read them first; overwrite what you need. Only list or read',
+  'files when this feature was built before (the task says so) or you are changing code you did not just write.',
+  'Build exactly what the feature asks and nothing more: no sign-in, admin area, database or storage layer, and no extra pages unless the criteria name them.',
+  'Prefer a few complete files over many small edits, and call run_checks once when everything is written.',
 ].join('\n');

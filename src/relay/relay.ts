@@ -130,6 +130,8 @@ export const SPEC_SYSTEM = [
   'Use exactly these markdown sections: ## Goal, ## Users, ## Features (one line each, with what "done" means),',
   '## Decisions (assumptions you made), ## Open questions.',
   'Keep it under 350 words. No code.',
+  'Describe ONLY the features the owner listed, one line each. Do not add features, user roles, sign-in, admin areas, databases or storage the owner did not ask for,',
+  'and do not turn a description of content (a menu, prices, hours) into an app that manages that content. If something is unclear, put it under Open questions.',
 ].join('\n');
 
 export const ARCHITECT_SYSTEM = [
@@ -160,7 +162,7 @@ export function specPrompt(idea: string, features: Array<{ name: string; type: s
   return [
     `Description: ${idea}`,
     '',
-    'Features:',
+    `Features (exactly ${features.length}; no others):`,
     ...features.map((f) => `- ${f.name} (${f.type}): ${f.acceptance.join('; ')}`),
   ].join('\n');
 }

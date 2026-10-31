@@ -17,6 +17,12 @@ export const MODELS = MODEL_CATALOG.map((m) => {
   return { ...m, input: r.inputPerMTok, output: r.outputPerMTok };
 });
 
+/** What a model picker needs and nothing else, so pages do not ship the whole catalog to the browser. */
+export const PICKER_MODELS = MODELS.map((m) => ({
+  id: m.id, label: m.label, vendor: m.vendor, input: m.input, output: m.output,
+  ...(m.lifecycle ? { lifecycle: m.lifecycle } : {}),
+}));
+
 /** The build phase can run on any vendor in the plan; live builds check the adapter. */
 export const BUILD_MODELS = MODELS;
 

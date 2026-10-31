@@ -5,7 +5,7 @@ import { PRIOR_RETRY_RATE, type CostLine, type PathPlan } from '../../../src/est
 import { gate, isRunning } from '../../../src/server/builds.ts';
 import { liveModeStatus } from '../../../src/server/live-mode.ts';
 import {
-  DEFAULT_RELAY, MODELS, modelLabel as labelOf, planFor, presetOf, presetPlans, registry, today,
+  DEFAULT_RELAY, PICKER_MODELS, modelLabel as labelOf, planFor, presetOf, presetPlans, registry, today,
 } from '../../../src/server/plan.ts';
 import { RETRY_CHOICES, whatIf } from '../../../src/server/what-if.ts';
 import { WhatIf } from './what-if.tsx';
@@ -126,12 +126,14 @@ export default async function ProjectPage({
   const project = await getProject(id);
   if (!project) notFound();
 
+  // Independent loads run together; each used to wait for the one before it.
   const g = await gate();
-  const plan = await planFor(project.spec);
-  const budget = await g.getBudget(id).catch(() => null);
-  const [spent, ledger, approvals] = budget
-    ? await Promise.all([g.spent(id), g.ledgerFor(id), g.pendingApprovals(id)])
-    : [0, [], []];
+  const [plan, budget, scope, mode] = await Promise.all([planFor(project.spec), g.getBudget(id).catch(() => null), userScope(), getMode()]);
+  const [[spent, ledger, approvals], report, projectEvents] = await Promise.all([
+    budget ? Promise.all([g.spent(id), g.ledgerFor(id), g.pendingApprovals(id)]) : Promise.resolve([0, [], []] as const),
+    loadReport(project, scope),
+    new PgEventLog(db(), scope).list(id),
+  ]);
   const running = isRunning(id);
   // "building" with nothing running means the server restarted mid-build.
   const interrupted = project.state === 'building' && !running;
@@ -149,17 +151,18 @@ export default async function ProjectPage({
     ...(budget ? { capMicros: budget.projectCap } : {}),
     live: project.buildMode === 'live',
   });
-  const easy = (await getMode()) === 'easy';
+  const easy = mode === 'easy';
   const presets = easy ? await presetPlans(project.spec) : null;
   const cov = plan.calibration.coverage;
   const canBuild = (project.state === 'approved' || project.state === 'paused' || interrupted)
     && approvals.length === 0 && !running && project.buildMode === 'live' && live.available;
   const canChangeMode = !running && ledger.length === 0;
-  const scope = await userScope();
-  const report = await loadReport(project, scope);
-  const projectEvents = await new PgEventLog(db(), scope).list(id);
   const stopEv = [...projectEvents].reverse().find((e) => e.type === 'relay_checkpoint' && e.payload.v === `v${project.specVersion}`);
   const waitingForOwner = !!stopEv && !projectEvents.some((e) => e.type === 'owner_approved' && e.payload.v === `v${project.specVersion}` && e.payload.stage === stopEv.payload.stage);
+  // The timeline needs only the relay records and what each task cost, not every event and ledger row.
+  const relayEvents = projectEvents.filter((e) => typeof e.payload.key === 'string' && /^v\d+:/.test(String(e.payload.key)));
+  const ledgerByTask = [...ledger.reduce((m, l) => m.set(l.taskId, (m.get(l.taskId) ?? 0) + l.amount), new Map<string, number>())]
+    .map(([taskId, amount]) => ({ taskId, amount }));
   const relay = project.spec.relay;
   const showRelay = !!relay || projectEvents.some((e) => e.type === 'relay_phase_started');
   const plannedModels = {
@@ -338,7 +341,7 @@ export default async function ProjectPage({
       <LiveView projectId={id} building={running} easy={easy} />
 
       {showRelay && (
-        <RelayTimeline events={projectEvents} ledger={ledger} planned={plannedModels} estimate={phaseEstimate}
+        <RelayTimeline events={relayEvents} ledger={ledgerByTask} planned={plannedModels} estimate={phaseEstimate}
           label={labelOf} easy={easy} running={running} />
       )}
 
@@ -360,7 +363,7 @@ export default async function ProjectPage({
         action={whatIfAction.bind(null, id)}
         apply={applyWhatIfAction.bind(null, id)}
         initial={{ result: explore, error: null }}
-        models={MODELS}
+        models={PICKER_MODELS}
         defaults={{
           relay: project.spec.relay ?? DEFAULT_RELAY,
           relayOn: !!project.spec.relay,
