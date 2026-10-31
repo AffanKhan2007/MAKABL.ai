@@ -413,6 +413,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; filter: n
 .relay-bar { display: flex; height: 10px; border-radius: 999px; overflow: hidden; background: var(--surface-3); gap: 2px; margin-bottom: 10px; }
 .relay-bar > span { display: block; height: 100%; transition: width 0.3s ease; }
 .v-anthropic { background: #e8a26a; }
+.v-qwen { background: #a78bfa; }
 .v-openai { background: var(--accent); }
 .v-google { background: var(--accent-2); }
 .vendor-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; vertical-align: middle; }

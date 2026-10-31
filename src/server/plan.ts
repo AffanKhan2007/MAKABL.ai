@@ -63,7 +63,7 @@ export async function planFor(spec: ProjectSpec, overrides: PlanOverrides = {}):
  * Why a vendor cannot run a live phase on this server, in words safe to show.
  */
 export function liveBlocker(provider: string): string | null {
-  if (provider === 'anthropic' || provider === 'google' || provider === 'openai') {
+  if (provider === 'anthropic' || provider === 'google' || provider === 'openai' || provider === 'qwen') {
     const live = liveModeStatus(process.env, provider);
     return live.available ? null : live.missing.join('; ');
   }

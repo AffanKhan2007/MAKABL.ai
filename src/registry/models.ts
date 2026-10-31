@@ -8,7 +8,7 @@ import type { PriceEntry, TokenRates } from './pricing.ts';
 // and gpt-3.5-turbo / gpt-4-0613, whose 16K / 8K context windows are smaller than one build
 // loop needs.
 
-export type Vendor = 'Anthropic' | 'OpenAI' | 'Google';
+export type Vendor = 'Anthropic' | 'OpenAI' | 'Google' | 'Qwen';
 
 export interface ModelInfo {
   id: string;
@@ -24,8 +24,9 @@ const SOURCES: Record<Vendor, string> = {
   Anthropic: 'https://platform.claude.com/docs/en/about-claude/pricing',
   OpenAI: 'https://developers.openai.com/api/docs/pricing',
   Google: 'https://ai.google.dev/gemini-api/docs/pricing',
+  Qwen: 'https://www.alibabacloud.com/help/en/model-studio/model-pricing',
 };
-const PROVIDER: Record<Vendor, string> = { Anthropic: 'anthropic', OpenAI: 'openai', Google: 'google' };
+const PROVIDER: Record<Vendor, string> = { Anthropic: 'anthropic', OpenAI: 'openai', Google: 'google', Qwen: 'qwen' };
 
 interface Row extends Omit<ModelInfo, 'id'> {
   product: string;
@@ -139,6 +140,17 @@ const ROWS: Row[] = [
   },
   { vendor: 'Google', label: 'Gemini 2.5 Flash', product: 'gemini-2.5-flash', rates: [0.3, 2.5, 0.03], lifecycle: 'legacy', extra: FREE_TIER },
   { vendor: 'Google', label: 'Gemini 2.5 Flash-Lite', product: 'gemini-2.5-flash-lite', rates: [0.1, 0.4, 0.01], lifecycle: 'legacy', extra: FREE_TIER },
+
+  // Qwen Cloud (Alibaba Model Studio, Singapore region). Price from third-party listings that
+  // agree on $0.15 / $0.47; the official page was not reachable on 2026-10-31, so confidence is
+  // medium until someone checks it in the Model Studio console.
+  {
+    vendor: 'Qwen', label: 'Qwen3.8 Flash', product: 'qwen3.8-flash', rates: [0.15, 0.47, null],
+    extra: {
+      confidence: 'medium',
+      freeTier: { note: 'New accounts: about 1M free tokens per model for 90 days, Singapore region only; then billed unless "free quota only" is on' },
+    },
+  },
 ];
 
 const idOf = (r: Row) => `${PROVIDER[r.vendor]}/${r.product}`;

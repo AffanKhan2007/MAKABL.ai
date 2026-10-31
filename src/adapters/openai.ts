@@ -20,6 +20,10 @@ export interface OpenAiEndpoint {
   /** Registry product → the endpoint's model id. */
   modelId(product: string): string;
   label: string;
+  /** Field that carries the output limit; OpenAI's newer name unless the endpoint wants another. */
+  maxTokensField?: 'max_completion_tokens' | 'max_tokens';
+  /** Extra request fields this endpoint needs on every call. */
+  extraBody?: Record<string, unknown>;
 }
 
 export const openAiDirect = (apiKey: string): OpenAiEndpoint => ({
@@ -29,6 +33,17 @@ export const openAiDirect = (apiKey: string): OpenAiEndpoint => ({
 /** OpenRouter model ids are "<vendor>/<slug>"; confirm each against GET /api/v1/models. */
 export const openRouter = (apiKey: string): OpenAiEndpoint => ({
   url: 'https://openrouter.ai/api/v1/chat/completions', apiKey, modelId: (p) => `openai/${p}`, label: 'OpenRouter',
+});
+
+/**
+ * Qwen Cloud (Alibaba Model Studio), international region, OpenAI-compatible mode. New accounts
+ * get a free token allowance per model on this region only. Thinking is switched off: it bills
+ * reasoning tokens and rejects tool_choice "required". Model ids are the bare product names.
+ */
+export const qwenCloud = (apiKey: string): OpenAiEndpoint => ({
+  url: 'https://ap-southeast-1.maas.qwencloudapi.com/compatible-mode/v1/chat/completions',
+  apiKey, modelId: (p) => p, label: 'Qwen Cloud',
+  maxTokensField: 'max_tokens', extraBody: { enable_thinking: false },
 });
 
 type Block = Record<string, any>;
@@ -108,7 +123,8 @@ export function openAiTransport(endpoint: OpenAiEndpoint): ClaudeTransport {
         model: endpoint.modelId(params.model),
         messages: chatMessages(params),
         ...(tools ? { tools } : {}),
-        max_completion_tokens: params.max_tokens,
+        [endpoint.maxTokensField ?? 'max_completion_tokens']: params.max_tokens,
+        ...endpoint.extraBody,
       });
       const choice = result.choices?.[0];
       if (!choice) throw new Error(`${endpoint.label} returned no choice`);
@@ -141,4 +157,9 @@ export function openAiEndpointFrom(env: Readonly<Record<string, string | undefin
   if (env.OPENAI_API_KEY) return openAiDirect(env.OPENAI_API_KEY);
   if (env.OPENROUTER_API_KEY) return openRouter(env.OPENROUTER_API_KEY);
   return null;
+}
+
+/** The Qwen Cloud endpoint if its key is set. */
+export function qwenEndpointFrom(env: Readonly<Record<string, string | undefined>>): OpenAiEndpoint | null {
+  return env.DASHSCOPE_API_KEY ? qwenCloud(env.DASHSCOPE_API_KEY) : null;
 }

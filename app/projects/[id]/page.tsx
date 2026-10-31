@@ -446,7 +446,7 @@ export default async function ProjectPage({
               )}
               <label className="check" style={{ marginBottom: 10 }}>
                 <input type="checkbox" name="confirm" value="yes" required />
-                I approve real calls to {provider === 'google' ? 'Google Gemini' : provider === 'openai' ? 'OpenAI' : 'Anthropic Claude'} (and any other vendor the relay uses) within my caps, and generated code running on this computer without a sandbox.
+                I approve real calls to {provider === 'google' ? 'Google Gemini' : provider === 'openai' ? 'OpenAI' : provider === 'qwen' ? 'Qwen Cloud' : 'Anthropic Claude'} (and any other vendor the relay uses) within my caps, and generated code running on this computer without a sandbox.
               </label>
               <button type="submit" disabled={!canBuild}>
                 {project.state === 'paused' || interrupted ? 'Resume build' : 'Start build'}
@@ -493,7 +493,7 @@ export default async function ProjectPage({
         <section className="card stack">
           <h2 style={{ margin: 0 }}>Build mode</h2>
           {project.buildMode === 'live' ? (
-            <p style={{ margin: 0 }}>This project makes real {provider === 'google' ? 'Gemini' : 'Claude'} API calls using {modelLabel}. Usage is checked against your approved budget before each call.</p>
+            <p style={{ margin: 0 }}>This project makes real {provider === 'google' ? 'Gemini' : provider === 'openai' ? 'OpenAI' : provider === 'qwen' ? 'Qwen' : 'Claude'} API calls using {modelLabel}. Usage is checked against your approved budget before each call.</p>
           ) : live.available ? (
             <form action={setBuildModeAction.bind(null, id)} className="stack">
               <p style={{ margin: 0 }}>

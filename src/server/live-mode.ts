@@ -17,6 +17,7 @@ export const LIVE_KEYS: Readonly<Record<string, readonly string[]>> = {
   anthropic: ['ANTHROPIC_API_KEY'],
   google: ['GEMINI_API_KEY'],
   openai: ['OPENAI_API_KEY', 'OPENROUTER_API_KEY'],
+  qwen: ['DASHSCOPE_API_KEY'],
 };
 
 /**
