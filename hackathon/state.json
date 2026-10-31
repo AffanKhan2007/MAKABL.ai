@@ -159,6 +159,24 @@
       "text": "OpenRouter adapter for non-Claude relay phases (design in hackathon/openrouter.md; needs OPENROUTER_API_KEY)",
       "tier": "should",
       "status": "open"
+    },
+    {
+      "id": 26,
+      "text": "Live preview: embed the generated app's dev server on the project page during the build",
+      "tier": "should",
+      "status": "done"
+    },
+    {
+      "id": 27,
+      "text": "Architect phase also produces a wireframe (matches what mentors were told)",
+      "tier": "should",
+      "status": "done"
+    },
+    {
+      "id": 28,
+      "text": "Lovable connector: create_project/send_message via its MCP (OAuth, credits); see hackathon/builder-platforms.md",
+      "tier": "could",
+      "status": "open"
     }
   ]
 }

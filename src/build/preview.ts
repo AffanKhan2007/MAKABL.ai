@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { join } from 'node:path';
 
@@ -153,3 +153,77 @@ export function stopPreview(key: string): void {
 
 /** Stop every preview when this server process exits, so none are left running. */
 process.once('exit', () => { for (const e of previews.values()) e.child?.kill(); });
+
+// ---- live view while the build runs --------------------------------------------------
+//
+// `next dev` on the project while the builder writes files, so the page can show the app
+// taking shape (hot reload does the refreshing). It writes to its own folder
+// (NEXT_DIST_DIR, set in the starter template's next.config.ts) so it cannot collide with
+// the `next build` the checks run in the same directory. Same stripped environment and
+// the same caveat as above: generated code running on this machine. It is stopped when
+// the build ends; "Run the app" opens the finished production build.
+
+const LIVE = ':live';
+const LIVE_READY_TIMEOUT_MS = 120_000; // the first page compiles on demand
+
+export const livePreviewOf = (key: string): Preview | null => previewOf(key + LIVE);
+
+/** The template's config reads NEXT_DIST_DIR; older workspaces do not and would collide. */
+function hasSeparateDistDir(dir: string): boolean {
+  try {
+    return readFileSync(join(dir, 'next.config.ts'), 'utf8').includes('NEXT_DIST_DIR');
+  } catch {
+    return false;
+  }
+}
+
+/** Start the live view. Resolves when it is serving or has failed; never throws. */
+export async function startLivePreview(key: string, dir: string): Promise<Preview> {
+  const id = key + LIVE;
+  const existing = previews.get(id);
+  if (existing && ['starting', 'running'].includes(existing.status)) return previewOf(id)!;
+
+  const entry: Entry = { status: 'starting', port: null, url: null, startedAt: new Date().toISOString(), log: '', child: null };
+  previews.set(id, entry);
+
+  const bin = nextBin(dir);
+  if (!bin || !hasSeparateDistDir(dir)) {
+    entry.status = 'failed';
+    entry.log = !bin
+      ? 'The project has no installed dependencies yet.'
+      : 'This project predates the live view (its next.config.ts has no NEXT_DIST_DIR). New projects have it.';
+    return previewOf(id)!;
+  }
+
+  const port = await freePort();
+  entry.port = port;
+  entry.url = `http://localhost:${port}`;
+  const env: NodeJS.ProcessEnv = { ...childEnv(port), NODE_ENV: 'development', NEXT_DIST_DIR: '.next-dev' };
+  const child = spawn(process.execPath, [bin, 'dev', '-p', String(port), '-H', '127.0.0.1'], { cwd: dir, env, windowsHide: true });
+  entry.child = child;
+  child.stdout.on('data', (d) => append(entry, d));
+  child.stderr.on('data', (d) => append(entry, d));
+  child.on('close', () => {
+    if (entry.status === 'running' || entry.status === 'starting') entry.status = 'failed';
+    entry.child = null;
+  });
+
+  const deadline = Date.now() + LIVE_READY_TIMEOUT_MS;
+  let up = false;
+  while (!up && Date.now() < deadline && entry.status === 'starting') {
+    // Any response means it is serving; a half-written page may answer with an error, and that is what the viewer should see.
+    try { await fetch(`http://127.0.0.1:${port}/`, { signal: AbortSignal.timeout(30_000) }); up = true; } catch { /* not up yet */ }
+    if (!up) await new Promise((r) => setTimeout(r, 700));
+  }
+  if (up && entry.status === 'starting') entry.status = 'running';
+  else if (entry.status === 'starting') { entry.status = 'failed'; child.kill(); }
+  return previewOf(id)!;
+}
+
+export function stopLivePreview(key: string): void {
+  const e = previews.get(key + LIVE);
+  if (!e) return;
+  e.status = 'stopped';
+  e.child?.kill();
+  e.child = null;
+}

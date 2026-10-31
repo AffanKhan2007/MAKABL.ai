@@ -1568,3 +1568,7 @@ input:disabled, textarea:disabled, select:disabled {
 }
 .theme-option-card { white-space: normal; text-align: left; align-items: stretch; justify-content: flex-start; }
 .theme-option-card * { min-width: 0; overflow-wrap: anywhere; }
+
+/* ---------- live view of the app being built ---------- */
+.live-frame { position: relative; width: 100%; height: min(70vh, 640px); border: 1px solid var(--border-strong); border-radius: var(--radius-sm); overflow: hidden; background: #ffffff; }
+.live-frame iframe { width: 100%; height: 100%; border: 0; display: block; background: #ffffff; }

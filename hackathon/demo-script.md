@@ -24,7 +24,7 @@ Everything below is real software. Where something has not run live, the script 
 | 0:25 | Sanjana | Price screen: build cost, monthly cost, Budget / Balanced / Best | "About $X to build, about $Y a month to run. Pick Budget and the price drops. The limit is set before anything starts." |
 | 0:40 | Affan | Flip to **Pro**, the Relay what-if panel | "Same project for someone who knows. The build is a relay of models, each doing one job: spec, architect, build, review. 57 models from three vendors, priced from their official lists." |
 | 0:55 | Affan | Change a model; point at the conflicts list | "Change a model and the price and the catch update at once: this one doubles in price on 1 December, this one is a preview." |
-| 1:10 | Affan | **Cafe specials** → Relay timeline | "This ran for real. The spec model wrote a brief; the architect worked from only that brief, 44% fewer tokens than the full history. Each phase has an allowance from the cap, and unspent money goes back to a shared pool. Every decision is on the record." |
+| 1:10 | Affan | A running build shows **Live view** (the app taking shape) above the **Relay timeline**; otherwise open **Cafe specials v2** → Relay timeline | "This ran for real. The spec model wrote a brief; the architect worked from only that brief, 44% fewer tokens than the full history. Each phase has an allowance from the cap, and unspent money goes back to a shared pool. Every decision is on the record." |
 | 1:25 | Nishant | The ledger and the paused state | "And the cap holds. It stopped when the provider's quota ran out, and booked nothing for calls that never ran." |
 | 1:30 | Shuja | Last slide | "Next: models that ask for tokens themselves, and paid-key runs on every vendor." |
 

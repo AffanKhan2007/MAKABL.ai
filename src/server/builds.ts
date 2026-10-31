@@ -1,3 +1,4 @@
+import { startLivePreview, stopLivePreview } from '../build/preview.ts';
 import { workspaceDir } from './paths.ts';
 import Anthropic from '@anthropic-ai/sdk';
 import {
@@ -76,7 +77,11 @@ export function startBuild(projectId: string, userId: string): boolean {
       });
       await setProjectState(projectId, 'paused', userId);
     })
-    .finally(() => state.running.delete(projectId));
+    .finally(() => {
+      state.running.delete(projectId);
+      // The live view lasts as long as the build; "Run the app" opens the finished app.
+      stopLivePreview(projectId);
+    });
   return true;
 }
 
@@ -185,6 +190,9 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
     await setProjectState(projectId, 'paused', userId);
     return;
   }
+  // Show the app as it is written. Not awaited: the first compile takes a while, and a live
+  // view that fails to start must never stop the build.
+  void startLivePreview(projectId, workspaceDir(projectId)).catch(() => {});
 
   const done = await verifiedTasks(projectId, userId);
   const plan = await planFor(project.spec);
@@ -264,7 +272,7 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
       const archMsg = await callPhase(caller, phaseCall({
         projectId, taskId: RELAY_TASK.architect, idempotencyKey: `${projectId}:${v}:architect`, description: 'Technical brief',
         model: archModel, system: ARCHITECT_SYSTEM, prompt: architectPrompt(specBrief),
-        maxTokens: 3_000, taskCeiling: budget.projectCap,
+        maxTokens: 4_000, taskCeiling: budget.projectCap,
       }));
       architectBrief = textOf(archMsg);
       const archTokens = tokensOf(archMsg);

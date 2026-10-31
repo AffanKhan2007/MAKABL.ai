@@ -11,6 +11,7 @@ import { RETRY_CHOICES, whatIf } from '../../../src/server/what-if.ts';
 import { WhatIf } from './what-if.tsx';
 import { EasyOverview } from './easy.tsx';
 import { RelayTimeline } from './relay-timeline.tsx';
+import { LiveView } from './live-view.tsx';
 import { PgEventLog } from '../../../src/db/pg-event-log.ts';
 import { db } from '../../../src/server/db.ts';
 import { getMode } from '../../../src/server/mode.ts';
@@ -328,6 +329,8 @@ export default async function ProjectPage({
           <p className="muted small" style={{ margin: 0 }}>Approve the updated plan below to build the changes.</p>
         </section>
       )}
+
+      <LiveView projectId={id} building={running} easy={easy} />
 
       {showRelay && (
         <RelayTimeline events={projectEvents} ledger={ledger} planned={plannedModels} estimate={phaseEstimate}
