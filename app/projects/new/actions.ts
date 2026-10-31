@@ -33,8 +33,8 @@ function onKeysHere(spec: ProjectSpec, env: Readonly<Record<string, string | und
     buildModel: 'google/gemini-3.8-flash',
     relay: {
       spec: pick([[env.MISTRAL_API_KEY, 'mistral/mistral-small-latest']], 'google/gemini-3.1-flash-lite'),
-      architect: pick([[env.OPENROUTER_API_KEY, 'openrouter/gpt-oss-120b-free']], 'google/gemini-3-flash-preview'),
-      review: pick([[env.GROQ_API_KEY, 'groq/llama-3.3-70b-versatile']], 'google/gemini-3.5-flash-lite'),
+      architect: pick([[env.OPENROUTER_API_KEY, 'openrouter/nemotron-ultra-free']], 'google/gemini-3-flash-preview'),
+      review: pick([[env.GROQ_API_KEY, 'groq/gpt-oss-120b']], 'google/gemini-3.5-flash-lite'),
     },
   };
 }

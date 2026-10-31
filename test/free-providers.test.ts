@@ -9,18 +9,18 @@ test('each free provider has its endpoint, model ids and key', () => {
   const env = { GROQ_API_KEY: 'g', MISTRAL_API_KEY: 'm', OPENROUTER_API_KEY: 'o' };
   assert.equal(freeEndpointFor('groq', env)?.url, 'https://api.groq.com/openai/v1/chat/completions');
   assert.equal(freeEndpointFor('mistral', env)?.url, 'https://api.mistral.ai/v1/chat/completions');
-  assert.equal(freeEndpointFor('openrouter', env)?.modelId('gpt-oss-120b-free'), 'openai/gpt-oss-120b:free');
+  assert.equal(freeEndpointFor('openrouter', env)?.modelId('nemotron-ultra-free'), 'nvidia/nemotron-3-ultra-550b-a55b:free');
   assert.equal(freeEndpointFor('groq', {}), null);
   assert.equal(liveModeStatus({ ...env, MAKABL_ALLOW_UNSANDBOXED_BUILDS: '1' }, 'mistral').available, true);
   assert.equal(liveModeStatus({ MAKABL_ALLOW_UNSANDBOXED_BUILDS: '1' }, 'groq').available, false);
 });
 
 test('the new models are in the catalog and priced, marked unverified', () => {
-  for (const id of ['groq/llama-3.3-70b-versatile', 'openrouter/gpt-oss-120b-free', 'mistral/mistral-small-latest']) {
+  for (const id of ['groq/gpt-oss-120b', 'openrouter/nemotron-ultra-free', 'mistral/mistral-small-latest']) {
     assert.ok(MODEL_CATALOG.some((m) => m.id === id), id);
     assert.equal(registry.get(id).confidence, 'unverified');
   }
-  assert.equal(registry.get('openrouter/gpt-oss-120b-free').rates.outputPerMTok, 0);
+  assert.equal(registry.get('openrouter/nemotron-ultra-free').rates.outputPerMTok, 0);
 });
 
 test('Mistral and OpenRouter get max_tokens; the endpoint model id is sent', async () => {
@@ -34,12 +34,12 @@ test('Mistral and OpenRouter get max_tokens; the endpoint model id is sent', asy
     }), { status: 200 });
   }) as unknown as typeof fetch;
   try {
-    const params = { model: 'gpt-oss-120b-free', max_tokens: 50, messages: [{ role: 'user' as const, content: 'hi' }] };
+    const params = { model: 'nemotron-ultra-free', max_tokens: 50, messages: [{ role: 'user' as const, content: 'hi' }] };
     const msg = await openAiTransport(freeEndpointFor('openrouter', { OPENROUTER_API_KEY: 'o' })!).send(params);
-    await openAiTransport(freeEndpointFor('groq', { GROQ_API_KEY: 'g' })!).send({ ...params, model: 'llama-3.3-70b-versatile' });
+    await openAiTransport(freeEndpointFor('groq', { GROQ_API_KEY: 'g' })!).send({ ...params, model: 'gpt-oss-120b' });
     assert.equal(msg.stop_reason, 'end_turn');
-    assert.deepEqual([bodies[0]!.model, bodies[0]!.max_tokens], ['openai/gpt-oss-120b:free', 50]);
-    assert.deepEqual([bodies[1]!.model, bodies[1]!.max_completion_tokens], ['llama-3.3-70b-versatile', 50]);
+    assert.deepEqual([bodies[0]!.model, bodies[0]!.max_tokens], ['nvidia/nemotron-3-ultra-550b-a55b:free', 50]);
+    assert.deepEqual([bodies[1]!.model, bodies[1]!.max_completion_tokens], ['openai/gpt-oss-120b', 50]);
   } finally {
     globalThis.fetch = real;
   }

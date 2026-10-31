@@ -25,8 +25,14 @@ export interface OpenAiEndpoint {
 }
 
 /** Groq: OpenAI-compatible, free tier with daily request limits. */
+// Groq's model ids include slashes (e.g. openai/gpt-oss-120b) that are not safe in
+// registry ids, so we map from the registry product slug to the real Groq model id.
+const GROQ_MODELS: Record<string, string> = {
+  'gpt-oss-120b': 'openai/gpt-oss-120b',
+};
 export const groq = (apiKey: string): OpenAiEndpoint => ({
-  url: 'https://api.groq.com/openai/v1/chat/completions', apiKey, modelId: (p) => p, label: 'Groq',
+  url: 'https://api.groq.com/openai/v1/chat/completions', apiKey,
+  modelId: (p) => GROQ_MODELS[p] ?? p, label: 'Groq',
 });
 
 /** Mistral's La Plateforme: free "Experiment" tier; takes max_tokens. */
@@ -36,8 +42,8 @@ export const mistral = (apiKey: string): OpenAiEndpoint => ({
 
 /** OpenRouter's free models, which have ":free" ids. Registry products → OpenRouter ids. */
 const OPENROUTER_FREE: Record<string, string> = {
-  'gpt-oss-120b-free': 'openai/gpt-oss-120b:free',
-  'qwen3-coder-free': 'qwen/qwen3-coder:free',
+  'nemotron-ultra-free': 'nvidia/nemotron-3-ultra-550b-a55b:free',
+  'gemma-4-31b-free': 'google/gemma-4-31b-it:free',
 };
 export const openRouterFree = (apiKey: string): OpenAiEndpoint => ({
   url: 'https://openrouter.ai/api/v1/chat/completions', apiKey, label: 'OpenRouter', maxTokensParam: 'max_tokens',

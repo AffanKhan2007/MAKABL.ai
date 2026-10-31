@@ -152,9 +152,9 @@ const ROWS: Row[] = [
   // Free-tier providers added for the hackathon (OpenAI-compatible APIs). Paid rates are not
   // yet checked against the pricing pages, so they are marked unverified and show as
   // assumptions; on the free tiers the calls cost nothing.
-  { vendor: 'Groq', label: 'Llama 3.3 70B (Groq)', product: 'llama-3.3-70b-versatile', rates: [0.59, 0.79, null], extra: UNVERIFIED_FREE },
-  { vendor: 'OpenRouter', label: 'gpt-oss-120b (OpenRouter, free)', product: 'gpt-oss-120b-free', rates: [0, 0, null], extra: UNVERIFIED_FREE },
-  { vendor: 'OpenRouter', label: 'Qwen3 Coder (OpenRouter, free)', product: 'qwen3-coder-free', rates: [0, 0, null], extra: UNVERIFIED_FREE },
+  { vendor: 'Groq', label: 'GPT-OSS 120B (Groq)', product: 'gpt-oss-120b', rates: [0, 0, null], extra: UNVERIFIED_FREE },
+  { vendor: 'OpenRouter', label: 'Nemotron 550B (OpenRouter, free)', product: 'nemotron-ultra-free', rates: [0, 0, null], extra: UNVERIFIED_FREE },
+  { vendor: 'OpenRouter', label: 'Gemma 4 31B (OpenRouter, free)', product: 'gemma-4-31b-free', rates: [0, 0, null], extra: UNVERIFIED_FREE },
   { vendor: 'Mistral', label: 'Mistral Small', product: 'mistral-small-latest', rates: [0.1, 0.3, null], extra: UNVERIFIED_FREE },
   { vendor: 'Mistral', label: 'Devstral Small', product: 'devstral-small-latest', rates: [0.1, 0.3, null], extra: UNVERIFIED_FREE },
 ];
