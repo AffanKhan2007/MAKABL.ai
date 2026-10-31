@@ -63,6 +63,12 @@ function describe(e: FeedEvent): string {
     case 'relay_substituted': return `${p.phase} ran on ${short(p.used)} instead of ${short(p.planned)}: ${p.reason}`;
     case 'relay_review': return `review of "${p.feature}": ${p.verdict ?? 'no verdict'}`;
     case 'negotiation': return `negotiator: ${p.phase} ${p.outcome} ${money(num(p.amount))}${p.from ? ` from ${p.from}` : ''}`;
+    case 'prompt_split': {
+      const list = Array.isArray(p.features) ? (p.features as string[]).join(', ') : '';
+      return p.source === 'ai'
+        ? `${short(p.model)} split the prompt into ${list}`
+        : `prompt split by keywords (${p.note ?? 'no model'}): ${list}`;
+    }
     default: return `${task}${e.type}`;
   }
 }
@@ -76,6 +82,7 @@ function toneOf(e: FeedEvent): string {
     case 'task_failed': case 'task_refused': case 'budget_overshoot': case 'model_call_failed': return 't-bad';
     case 'tool_executed': return e.payload.isError ? 't-bad' : 't-accent';
     case 'relay_handoff': case 'relay_phase_started': return 't-accent';
+    case 'prompt_split': return e.payload.source === 'ai' ? 't-accent' : 't-warn';
     case 'relay_review': return e.payload.verdict === 'concerns' ? 't-warn' : 't-good';
     case 'negotiation': return e.payload.outcome === 'escalated' ? 't-warn' : 't-accent';
     case 'relay_substituted': return 't-warn';
