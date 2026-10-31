@@ -232,7 +232,8 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
     const d = negotiator.finish(phase);
     if (d) await onDecision(d);
     await once(`finished:${phase}`, 'relay_phase_finished', null, {
-      phase, model, spent: negotiator.phases.get(phase)?.spent ?? 0, ...extra,
+      // The model that last ran the phase, after any quota or overload switch.
+      phase, model: caller.current(model) ?? model, spent: negotiator.phases.get(phase)?.spent ?? 0, ...extra,
     });
   };
   const pause = () => setProjectState(projectId, 'paused', userId);
@@ -259,7 +260,7 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
         from: 'spec', to: 'architect', fromModel: specModel, toModel: archModel, brief: specBrief.slice(0, 6_000),
         briefTokens: specTokens.output, historyTokens: specTokens.input + specTokens.output,
       });
-      await once('started:architect', 'relay_phase_started', RELAY_TASK.architect, { phase: 'architect', model: archModel });
+      await once('started:architect', 'relay_phase_started', RELAY_TASK.architect, { phase: 'architect', model: caller.current(archModel) ?? archModel });
       const archMsg = await callPhase(caller, phaseCall({
         projectId, taskId: RELAY_TASK.architect, idempotencyKey: `${projectId}:${v}:architect`, description: 'Technical brief',
         model: archModel, system: ARCHITECT_SYSTEM, prompt: architectPrompt(specBrief),
@@ -277,7 +278,7 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
       reviewModel = await modelFor('review');
     }
 
-    await once('started:build', 'relay_phase_started', null, { phase: 'build', model: buildModel });
+    await once('started:build', 'relay_phase_started', null, { phase: 'build', model: caller.current(buildModel) ?? buildModel });
     for (const feature of project.spec.features) {
       // Stable per name, type and criteria: unchanged features stay done across spec edits.
       const taskId = taskIdFor(feature);
@@ -320,7 +321,7 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
           briefTokens: approxTokens(prompt),
           historyTokens: t.input + t.output + t.cacheRead + t.cacheWrite5m + t.cacheWrite1h,
         });
-        await once('started:review', 'relay_phase_started', null, { phase: 'review', model: reviewModel });
+        await once('started:review', 'relay_phase_started', null, { phase: 'review', model: caller.current(reviewModel) ?? reviewModel });
         try {
           const msg = await callPhase(caller, phaseCall({
             projectId, taskId: reviewTaskId(taskId), idempotencyKey: `${projectId}:${v}:review:${taskId}`,
