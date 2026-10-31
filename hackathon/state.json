@@ -159,6 +159,24 @@
       "text": "OpenRouter adapter for non-Claude relay phases (design in hackathon/openrouter.md; needs OPENROUTER_API_KEY)",
       "tier": "should",
       "status": "open"
+    },
+    {
+      "id": 26,
+      "text": "Design mockups page: AI wireframe after approval, ask for another version, tokens + cost per version",
+      "tier": "must",
+      "status": "done"
+    },
+    {
+      "id": 27,
+      "text": "Relay timeline: tokens per phase, negotiation before/after",
+      "tier": "must",
+      "status": "done"
+    },
+    {
+      "id": 28,
+      "text": "Qwen Cloud vendor (free token allowance) for a live end-to-end build",
+      "tier": "should",
+      "status": "open"
     }
   ]
 }
