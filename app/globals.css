@@ -34,8 +34,9 @@
   color-scheme: dark;
 }
 
+/* Light theme: follows the system unless the visitor picked one (data-theme on <html>). */
 @media (prefers-color-scheme: light) {
-  :root {
+  :root:not([data-theme="dark"]) {
     --bg: #f6f7f9;
     --bg-glow: rgba(13, 148, 136, 0.10);
     --bg-glow-2: rgba(79, 70, 229, 0.08);
@@ -63,6 +64,34 @@
     --shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 12px 32px -20px rgba(15, 23, 42, 0.25);
     color-scheme: light;
   }
+}
+:root[data-theme="light"] {
+  --bg: #f6f7f9;
+  --bg-glow: rgba(13, 148, 136, 0.10);
+  --bg-glow-2: rgba(79, 70, 229, 0.08);
+  --grid: rgba(15, 23, 42, 0.05);
+  --surface: rgba(255, 255, 255, 0.9);
+  --surface-solid: #ffffff;
+  --surface-2: #f1f4f8;
+  --surface-3: #e8edf3;
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --text: #0b1220;
+  --text-2: #334155;
+  --muted: #5b6678;
+  --faint: #8a95a6;
+  --accent: #0d9488;
+  --accent-2: #4f46e5;
+  --accent-ink: #ffffff;
+  --accent-soft: rgba(13, 148, 136, 0.10);
+  --good: #15803d;
+  --good-bg: rgba(21, 128, 61, 0.10);
+  --warn: #b45309;
+  --warn-bg: rgba(180, 83, 9, 0.10);
+  --bad: #dc2626;
+  --bad-bg: rgba(220, 38, 38, 0.08);
+  --shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 12px 32px -20px rgba(15, 23, 42, 0.25);
+  color-scheme: light;
 }
 
 * { box-sizing: border-box; }
@@ -386,4 +415,36 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; filter: n
 @media (max-width: 420px) {
   .user .nav { display: none; }
   .mode-switch button { padding: 4px 9px; }
+}
+
+/* ---------- relay timeline ---------- */
+.relay-track { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 22px; }
+@media (max-width: 760px) { .relay-track { grid-template-columns: 1fr 1fr; gap: 12px; } }
+.relay-step-card { position: relative; background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: var(--radius-sm); padding: 10px 12px; display: grid; gap: 6px; min-width: 0; }
+.relay-step-card + .relay-step-card::before { content: "→"; position: absolute; left: -17px; top: 18px; color: var(--accent); font: 600 14px var(--font-mono); }
+@media (max-width: 760px) { .relay-step-card + .relay-step-card::before { display: none; } }
+.relay-step-card.s-running { border-color: var(--warn); box-shadow: 0 0 0 3px var(--warn-bg); }
+.relay-step-card.s-done { border-color: color-mix(in srgb, var(--good) 45%, var(--border)); }
+.relay-model { font: 600 14px var(--font-mono); overflow-wrap: anywhere; }
+.handoff-detail { border: 1px dashed var(--border-strong); border-radius: var(--radius-sm); padding: 8px 12px; }
+.handoff-detail summary { cursor: pointer; }
+.handoff-detail .brief { white-space: pre-wrap; margin: 8px 0 0; max-height: 260px; overflow: auto; color: var(--text-2); }
+.negotiations { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+
+/* ---------- theme switch ---------- */
+.theme-switch { display: inline-flex; border: 1px solid var(--border-strong); border-radius: 999px; padding: 2px; gap: 2px; background: var(--surface-2); }
+.theme-switch button { background: transparent; color: var(--muted); border: 0; border-radius: 999px; padding: 3px 8px; font-size: 13px; line-height: 1.2; box-shadow: none; min-width: 0; }
+.theme-switch button[aria-pressed=true] { background: var(--accent-soft); color: var(--accent); }
+.theme-switch button:hover { color: var(--text); transform: none; }
+@media (max-width: 420px) { .theme-switch button { padding: 3px 6px; } }
+/* Phones: the logo mark stands in for the wordmark so the switches and Sign out fit. */
+@media (max-width: 480px) {
+  .topbar .brand { font-size: 0; gap: 0; }
+  .topbar .brand .brand-mark { font-size: 14px; }
+  .topbar .user, .topbar > .row { gap: 6px !important; }
+}
+@media (max-width: 420px) {
+  .mode-switch button { padding: 4px 7px; }
+  .theme-switch button { padding: 3px 4px; }
+  .topbar .user button.small { padding-left: 9px; padding-right: 9px; }
 }

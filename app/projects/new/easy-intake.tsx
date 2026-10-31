@@ -119,7 +119,7 @@ export function EasyIntake({ action, presets }: {
         <div className="choice-list">
           {presets.map((p) => (
             <label key={p.id} className="choice">
-              <input type="radio" name="preset" value={p.id} defaultChecked={p.id === 'balanced'} />
+              <input type="radio" name="preset" value={p.id} defaultChecked={p.id === 'budget'} />
               <span>{p.label}<span className="hint">{p.blurb}</span></span>
             </label>
           ))}

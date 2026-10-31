@@ -110,19 +110,19 @@
       "id": 17,
       "text": "Relay: phase pipeline (spec -> architect -> build -> review), each phase its own model, structured handoff brief + history pointer",
       "tier": "must",
-      "status": "open"
+      "status": "done"
     },
     {
       "id": 18,
       "text": "Token negotiator: per-phase token budgets from the cap; models request more with a reason; grant/reassign/escalate via Budget Gate",
       "tier": "must",
-      "status": "open"
+      "status": "done"
     },
     {
       "id": 19,
       "text": "Relay timeline UI: model per phase, tokens vs budget, handoff briefs, negotiations, tokens saved by briefs",
       "tier": "must",
-      "status": "open"
+      "status": "done"
     },
     {
       "id": 20,
@@ -153,6 +153,12 @@
       "text": "Easy mode (plain words, presets) and Pro mode (every model and number), switch in top bar",
       "tier": "must",
       "status": "done"
+    },
+    {
+      "id": 25,
+      "text": "OpenRouter adapter for non-Claude relay phases (design in hackathon/openrouter.md; needs OPENROUTER_API_KEY)",
+      "tier": "should",
+      "status": "open"
     }
   ]
 }

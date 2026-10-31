@@ -18,6 +18,9 @@ const PORT = 5433;
 const USER = 'postgres';
 const PASSWORD = 'makabl';
 const DATABASE = 'makabl';
+// Always UTF-8: on Windows the cluster defaults to WIN1252, which cannot store characters
+// models and test runners print (arrows, check marks, emoji), and an insert would fail.
+const UTF8 = "encoding 'UTF8' lc_collate 'C' lc_ctype 'C' template template0";
 
 // embedded-postgres installs one binary package per platform, e.g. @embedded-postgres/windows-x64.
 const os = process.platform === 'win32' ? 'windows' : process.platform;
@@ -68,7 +71,7 @@ async function start(): Promise<void> {
   await admin.connect();
   try {
     const { rowCount } = await admin.query('select 1 from pg_database where datname = $1', [DATABASE]);
-    if (rowCount === 0) await admin.query(`create database ${DATABASE}`);
+    if (rowCount === 0) await admin.query(`create database ${DATABASE} ${UTF8}`);
   } finally {
     await admin.end();
   }

@@ -47,6 +47,13 @@ export type AuthorizeResult =
  */
 export class FailedAttemptReplayError extends Error {}
 
+/**
+ * The provider refused the request before doing any work (a quota or rate limit, an
+ * invalid request), so nothing was charged: the Gate releases the reservation instead
+ * of booking the worst case, and the key can be used again.
+ */
+export class NotChargedError extends Error {}
+
 export class BudgetBlockedError extends Error {
   readonly approval: ApprovalRequest;
   constructor(reason: string, approval: ApprovalRequest) {
@@ -227,7 +234,8 @@ export class BudgetGate {
 
   /**
    * Authorize, run, settle. If the call throws we cannot tell whether the provider
-   * charged, so the full worst case is booked as 'estimated' rather than dropped.
+   * charged, so the full worst case is booked as 'estimated' rather than dropped, unless
+   * the error says the provider refused it before doing any work (NotChargedError).
    */
   async execute<T>(
     req: PaidCallRequest,
@@ -240,6 +248,10 @@ export class BudgetGate {
     try {
       outcome = await call(auth.token);
     } catch (err) {
+      if (err instanceof NotChargedError) {
+        await this.release(auth.token);
+        throw err;
+      }
       await this.settleInternal(
         auth.token, auth.token.worstCase, `${req.description} (failed; charge unknown)`, undefined, 'estimated', true,
       );

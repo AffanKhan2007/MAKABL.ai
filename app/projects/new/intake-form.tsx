@@ -17,7 +17,7 @@ const EXAMPLE: ProjectSpec = {
   commercialUse: true,
   horizon: 'first_month',
   monthlyVisitors: 2000,
-  buildModel: 'anthropic/claude-opus-5-5',
+  buildModel: 'google/gemini-3.6-flash',
   unpricedItems: ['Custom domain'],
 };
 

@@ -45,12 +45,16 @@ Demo shape (both modes in 90 seconds):
 4. **The limit holds.** The build pauses before it would go over the cap and asks. *(15 s)*
 5. Close: estimate against actual, and what was checked. *(10 s)*
 
-Update step 2 once Affan's relay timeline (#19) lands.
+For step 2, open a project's **Relay timeline** (Pro mode): the model each phase ran on, spend
+against its allowance, the handoff briefs (click one to read what the spec model told the
+architect) and the negotiator's decisions.
 
 ## Q&A answers to have ready
 
-- **Is the relay real?** Say exactly what is real on the day. The cost plan prices every phase
-  today; whether phases run live depends on #17. Never claim more than the demo shows.
+- **Is the relay real?** Yes: it ran live on Gemini's free tier. The spec model wrote a brief,
+  the architect worked from only that brief (44% fewer tokens than the history), and the
+  negotiator handed unspent allowance back. A full generated app passing every check has not
+  happened on the free tier yet (quota). OpenAI and Claude phases are built but not run live.
 - **How accurate are the estimates?** Ranges, not a bill. Wide on purpose until enough real
   builds are logged; the app says so on screen.
 - **Where do the prices come from?** The vendors' official pricing pages, checked 31 Oct, with
@@ -74,7 +78,7 @@ Update step 2 once Affan's relay timeline (#19) lands.
 ## Rules
 
 - Problem first, then the demo, then how it works. Not the tech first.
-- Anything simulated is called simulated on stage.
+- Never claim a live run that did not happen; the honesty rule in `plan.md` says what did.
 - The prior-work line goes in the submission form only (see `hackathon/DISCLOSURE.md`), not
   on stage or in the deck.
 - Submit by 09:53. The portal will be slow at the end.

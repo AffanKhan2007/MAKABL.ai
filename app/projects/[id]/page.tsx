@@ -4,11 +4,14 @@ import { PRIOR_RETRY_RATE, type CostLine, type PathPlan } from '../../../src/est
 import { gate, isRunning } from '../../../src/server/builds.ts';
 import { liveModeStatus } from '../../../src/server/live-mode.ts';
 import {
-  DEFAULT_RELAY, MODELS, modelLabel as labelOf, planFor, presetOf, presetPlans, today,
+  DEFAULT_RELAY, MODELS, modelLabel as labelOf, planFor, presetOf, presetPlans, registry, today,
 } from '../../../src/server/plan.ts';
 import { RETRY_CHOICES, whatIf } from '../../../src/server/what-if.ts';
 import { WhatIf } from './what-if.tsx';
 import { EasyOverview } from './easy.tsx';
+import { RelayTimeline } from './relay-timeline.tsx';
+import { PgEventLog } from '../../../src/db/pg-event-log.ts';
+import { db } from '../../../src/server/db.ts';
 import { getMode } from '../../../src/server/mode.ts';
 import { getProject } from '../../../src/server/projects.ts';
 import { FEATURE_TYPES, money, range, STATE_LABEL } from '../../format.ts';
@@ -130,7 +133,8 @@ export default async function ProjectPage({
   const running = isRunning(id);
   // "building" with nothing running means the server restarted mid-build.
   const interrupted = project.state === 'building' && !running;
-  const live = liveModeStatus();
+  const provider = registry.get(project.spec.buildModel).provider;
+  const live = liveModeStatus(process.env, provider);
   const s = interrupted
     ? { text: 'Interrupted', tone: 'bad' as const }
     : STATE_LABEL[project.state] ?? { text: project.state, tone: '' as const };
@@ -147,10 +151,20 @@ export default async function ProjectPage({
   const presets = easy ? await presetPlans(project.spec) : null;
   const cov = plan.calibration.coverage;
   const canBuild = (project.state === 'approved' || project.state === 'paused' || interrupted)
-    && approvals.length === 0 && !running && (project.buildMode === 'simulated' || live.available);
+    && approvals.length === 0 && !running && project.buildMode === 'live' && live.available;
   const canChangeMode = !running && ledger.length === 0;
   const scope = await userScope();
   const report = await loadReport(project, scope);
+  const projectEvents = await new PgEventLog(db(), scope).list(id);
+  const relay = project.spec.relay;
+  const showRelay = !!relay || projectEvents.some((e) => e.type === 'relay_phase_started');
+  const plannedModels = {
+    spec: relay?.spec ?? project.spec.buildModel,
+    architect: relay?.architect ?? project.spec.buildModel,
+    build: project.spec.buildModel,
+    review: relay?.review ?? project.spec.buildModel,
+  };
+  const phaseEstimate = Object.fromEntries((plan.relay?.phases ?? []).map((ph) => [ph.phase, ph.range.expected]));
   const preview = previewOf(id);
   const appBuilt = project.buildMode === 'live' && report.features.length > 0
     && report.features.every((f) => f.status === 'verified');
@@ -236,8 +250,9 @@ export default async function ProjectPage({
         </p>
       ) : (
         <p className="notice bad">
-          Live build: calls the Claude API on your key and spends real money, within the caps below. Generated code
-          is installed, tested and built on this computer without a sandbox.
+          {easy
+            ? 'Real build: AI services are paid per use on your keys, never past your limit. The app it writes is installed and tested on this computer.'
+            : 'Live build: calls each phase’s model API on your keys (real money unless on a free tier), within the caps below. Generated code is installed, tested and built on this computer without a sandbox.'}
         </p>
       )}
 
@@ -313,6 +328,11 @@ export default async function ProjectPage({
         </section>
       )}
 
+      {showRelay && (
+        <RelayTimeline events={projectEvents} ledger={ledger} planned={plannedModels} estimate={phaseEstimate}
+          label={labelOf} easy={easy} running={running} />
+      )}
+
       {!easy && <>
       <h2 style={{ marginTop: 24 }}>Cost plan</h2>
       <p className="muted small" style={{ marginTop: -6 }}>
@@ -363,13 +383,14 @@ export default async function ProjectPage({
           <h2 style={{ margin: 0 }}>{easy ? 'Spending limit' : 'Budget'}</h2>
           {project.state !== 'costed' && budget ? (
             <>
-              <div className="row spread"><span className="muted">Project cap</span><span className="num">{money(budget.projectCap)}</span></div>
-              <div className="row spread"><span className="muted">Monthly cap</span><span className="num">{money(budget.monthlyCap)}</span></div>
-              <div className="row spread"><span className="muted">Spent on the build</span><span className="num">{money(spent)}</span></div>
-              <div className="row spread"><span className="muted">Plan expected the build at</span><span className="num">{money(buildExpected)} (up to {money(buildHigh)})</span></div>
+              <div className="row spread"><span className="muted">{easy ? 'Your limit' : 'Project cap'}</span><span className="num">{money(budget.projectCap)}</span></div>
+              {!easy && <div className="row spread"><span className="muted">Monthly cap</span><span className="num">{money(budget.monthlyCap)}</span></div>}
+              <div className="row spread"><span className="muted">{easy ? 'Spent so far' : 'Spent on the build'}</span><span className="num">{money(spent)}</span></div>
+              <div className="row spread"><span className="muted">{easy ? 'We expected about' : 'Plan expected the build at'}</span><span className="num">{money(buildExpected)} (up to {money(buildHigh)})</span></div>
               <p className="muted small" style={{ margin: 0 }}>
-                Each model call reserves its worst case before it runs, so the build pauses for approval
-                before a cap could be crossed.
+                {easy
+                  ? 'Before every step MAKABL sets aside the most it could cost, so it stops and asks before going over your limit.'
+                  : 'Each model call reserves its worst case before it runs, so the build pauses for approval before a cap could be crossed.'}
               </p>
             </>
           ) : (
@@ -417,6 +438,15 @@ export default async function ProjectPage({
           {approvals.length > 0 && <p className="notice bad" style={{ margin: 0 }}>Paused: decide the approval below to continue.</p>}
           {budget && project.state !== 'verifying' && (
             <form action={startBuildAction.bind(null, id)}>
+              {provider === 'google' && (
+                <p className="muted small" style={{ margin: '0 0 10px' }}>
+                  Google may use prompts sent on its free API tier to improve its products. Use a paid-tier key for prompts excluded from product improvement.
+                </p>
+              )}
+              <label className="check" style={{ marginBottom: 10 }}>
+                <input type="checkbox" name="confirm" value="yes" required />
+                I approve real calls to {provider === 'google' ? 'Google Gemini' : provider === 'openai' ? 'OpenAI' : 'Anthropic Claude'} (and any other vendor the relay uses) within my caps, and generated code running on this computer without a sandbox.
+              </label>
               <button type="submit" disabled={!canBuild}>
                 {project.state === 'paused' || interrupted ? 'Resume build' : 'Start build'}
               </button>
@@ -462,15 +492,11 @@ export default async function ProjectPage({
         <section className="card stack">
           <h2 style={{ margin: 0 }}>Build mode</h2>
           {project.buildMode === 'live' ? (
-            <form action={setBuildModeAction.bind(null, id)} className="row">
-              <span>This project will call the Claude API.</span>
-              <button type="submit" name="mode" value="simulated" className="secondary">Switch back to simulated</button>
-            </form>
+            <p style={{ margin: 0 }}>This project makes real {provider === 'google' ? 'Gemini' : 'Claude'} API calls using {modelLabel}. Usage is checked against your approved budget before each call.</p>
           ) : live.available ? (
             <form action={setBuildModeAction.bind(null, id)} className="stack">
               <p style={{ margin: 0 }}>
-                A live build has Claude write the app for real on the Next.js starter project, spending money on your
-                API key within the caps, and logs each feature's real cost so future estimates improve.
+                Simulated builds are retired. Switching this existing project to live lets {modelLabel} build a real Next.js app through the budget gate.
               </p>
               <label className="check">
                 <input type="checkbox" name="confirm" value="yes" required />

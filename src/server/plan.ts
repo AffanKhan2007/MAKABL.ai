@@ -23,7 +23,7 @@ export const modelLabel = (id: string): string => MODELS.find((m) => m.id === id
 
 /** A cheap model writes the spec, a strong one designs, a small one reviews. */
 export const DEFAULT_RELAY: RelayModels = {
-  spec: 'google/gemini-3.1-flash-lite',
+  spec: 'google/gemini-3.5-flash-lite',
   architect: 'openai/gpt-6.1-sol',
   review: 'anthropic/claude-haiku-5-5',
 };
@@ -60,15 +60,14 @@ export async function planFor(spec: ProjectSpec, overrides: PlanOverrides = {}):
 }
 
 /**
- * Why a vendor cannot run a live phase on this server, in words safe to show. Only the
- * Claude adapter exists so far; OpenAI and Gemini phases run simulated.
+ * Why a vendor cannot run a live phase on this server, in words safe to show.
  */
 export function liveBlocker(provider: string): string | null {
-  if (provider === 'anthropic') {
-    const live = liveModeStatus();
+  if (provider === 'anthropic' || provider === 'google' || provider === 'openai') {
+    const live = liveModeStatus(process.env, provider);
     return live.available ? null : live.missing.join('; ');
   }
-  return `No live ${provider === 'openai' ? 'OpenAI' : provider === 'google' ? 'Gemini' : provider} adapter on this server yet`;
+  return `No live ${provider} adapter on this server yet`;
 }
 
 /** The plan plus its conflicts and shortcomings. */
@@ -82,15 +81,14 @@ export async function planWithConflicts(
 }
 
 /**
- * Easy mode's three choices, each a full relay. The build stays on Claude in all three,
- * since only the Claude adapter can build live today. Budget plans for an extra attempt per
- * feature because a small model fails checks more often.
+ * Easy mode's budget preset selects the cheapest supported live build model. Balanced and
+ * Best remain higher-cost Claude options. Budget plans for an extra attempt per feature.
  */
 export const PRESETS = {
   budget: {
     label: 'Budget', blurb: 'Smaller AI models. Cheapest, with more retries.',
-    relay: { spec: 'google/gemini-3.1-flash-lite', architect: 'google/gemini-3.8-flash', review: 'google/gemini-3.1-flash-lite' },
-    buildModel: 'anthropic/claude-haiku-5-5', retryRate: 1,
+    relay: { spec: 'google/gemini-3.5-flash-lite', architect: 'google/gemini-3.6-flash', review: 'google/gemini-3.5-flash-lite' },
+    buildModel: 'google/gemini-3.6-flash', retryRate: 1,
   },
   balanced: {
     label: 'Balanced', blurb: 'Strong where it matters, cheap elsewhere.',

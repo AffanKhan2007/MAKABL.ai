@@ -4,9 +4,9 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { DB_UNAVAILABLE_MESSAGE, isDbUnavailable } from '../src/server/db.ts';
 import { getSessionUser } from '../src/server/session.ts';
-import { getMode } from '../src/server/mode.ts';
+import { getMode, getTheme, type Theme } from '../src/server/mode.ts';
 import { signOutAction } from './auth-actions.ts';
-import { setModeAction } from './mode-actions.ts';
+import { setModeAction, setThemeAction } from './mode-actions.ts';
 import './globals.css';
 
 const sans = Geist({ subsets: ['latin'], variable: '--font-geist-sans' });
@@ -26,14 +26,35 @@ export function Brand({ href }: { href: string }) {
   );
 }
 
-function Shell({ children, right, home }: { children: ReactNode; right?: ReactNode; home: string }) {
+/** System, light or dark; remembered per browser in a cookie. */
+function ThemeSwitch({ theme }: { theme: Theme | null }) {
+  const options = [
+    { value: 'system', icon: '◐', label: 'Follow the system theme', on: theme === null },
+    { value: 'light', icon: '☀', label: 'Light theme', on: theme === 'light' },
+    { value: 'dark', icon: '☾', label: 'Dark theme', on: theme === 'dark' },
+  ];
   return (
-    <html lang="en" className={`${sans.variable} ${mono.variable}`}>
+    <form action={setThemeAction} className="theme-switch" aria-label="Theme">
+      {options.map((o) => (
+        <button key={o.value} type="submit" name="theme" value={o.value} aria-pressed={o.on} aria-label={o.label} title={o.label}>
+          {o.icon}
+        </button>
+      ))}
+    </form>
+  );
+}
+
+function Shell({ children, right, home, theme }: { children: ReactNode; right?: ReactNode; home: string; theme: Theme | null }) {
+  return (
+    <html lang="en" className={`${sans.variable} ${mono.variable}`} {...(theme ? { 'data-theme': theme } : {})}>
       <body>
         <div className="shell">
           <header className="topbar">
             <Brand href={home} />
-            {right}
+            <div className="row" style={{ gap: 8, flexWrap: 'nowrap' }}>
+              <ThemeSwitch theme={theme} />
+              {right}
+            </div>
           </header>
           {children}
         </div>
@@ -43,13 +64,14 @@ function Shell({ children, right, home }: { children: ReactNode; right?: ReactNo
 }
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
+  const theme = await getTheme();
   let user: Awaited<ReturnType<typeof getSessionUser>> = null;
   try {
     user = await getSessionUser();
   } catch (err) {
     if (!isDbUnavailable(err)) throw err;
     return (
-      <Shell home="/">
+      <Shell home="/" theme={theme}>
         <main className="auth">
           <h1>Can&rsquo;t reach the database</h1>
           <p className="notice bad">{DB_UNAVAILABLE_MESSAGE}</p>
@@ -81,5 +103,5 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
     </nav>
   );
 
-  return <Shell home={user ? '/projects' : '/'} right={right}>{children}</Shell>;
+  return <Shell home={user ? '/projects' : '/'} right={right} theme={theme}>{children}</Shell>;
 }

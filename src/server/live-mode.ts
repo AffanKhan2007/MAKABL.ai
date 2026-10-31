@@ -1,5 +1,5 @@
-// Whether this server may run live builds. Live builds spend real money on the
-// operator's Claude API key and run model-written code (npm install, tests, next build)
+// Whether this server may run live builds. Live builds use the configured provider key
+// and run model-written code (npm install, tests, next build)
 // on this machine with no sandbox, so both have to be switched on deliberately in the
 // server's environment, and the user confirms again per project.
 
@@ -9,10 +9,14 @@ export interface LiveModeStatus {
   missing: string[];
 }
 
-export function liveModeStatus(env: Readonly<Record<string, string | undefined>> = process.env): LiveModeStatus {
+export function liveModeStatus(env: Readonly<Record<string, string | undefined>> = process.env, provider = 'anthropic'): LiveModeStatus {
   const missing: string[] = [];
-  if (!env.ANTHROPIC_API_KEY) {
-    missing.push('ANTHROPIC_API_KEY is not set in .env.local');
+  if (provider === 'openai') {
+    // Either key reaches OpenAI models: directly, or through OpenRouter.
+    if (!env.OPENAI_API_KEY && !env.OPENROUTER_API_KEY) missing.push('OPENAI_API_KEY or OPENROUTER_API_KEY is not set in .env.local');
+  } else {
+    const keyName = provider === 'google' ? 'GEMINI_API_KEY' : 'ANTHROPIC_API_KEY';
+    if (!env[keyName]) missing.push(`${keyName} is not set in .env.local`);
   }
   if (env.MAKABL_ALLOW_UNSANDBOXED_BUILDS !== '1') {
     missing.push('MAKABL_ALLOW_UNSANDBOXED_BUILDS=1 is not set in .env.local (generated code runs on this computer without a sandbox)');

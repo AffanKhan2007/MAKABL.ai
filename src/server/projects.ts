@@ -54,7 +54,7 @@ export async function createProject(name: string, spec: ProjectSpec): Promise<st
   return withTx(db(), scope, async (c) => {
     const { rows } = await c.query<{ id: string }>(
       `insert into projects (owner_id, name, state, commercial_use, build_mode)
-       values ($1, $2, 'costed', $3, 'simulated') returning id`,
+       values ($1, $2, 'costed', $3, 'live') returning id`,
       [scope.userId, name, spec.commercialUse],
     );
     const id = rows[0]!.id;

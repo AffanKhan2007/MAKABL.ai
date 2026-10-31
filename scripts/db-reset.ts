@@ -7,6 +7,9 @@
 import { readFile } from 'node:fs/promises';
 import pg from 'pg';
 
+// Always UTF-8: on Windows the cluster defaults to WIN1252, which cannot store characters
+// models and test runners print (arrows, check marks, emoji), and an insert would fail.
+const UTF8 = "encoding 'UTF8' lc_collate 'C' lc_ctype 'C' template template0";
 const test = process.argv.includes('--test');
 const url = test
   ? process.env.TEST_DATABASE_URL ?? 'postgres://postgres:makabl@localhost:5433/makabl_test'
@@ -26,7 +29,7 @@ await admin.connect();
 try {
   const { rowCount } = await admin.query('select 1 from pg_database where datname = $1', [dbName]);
   if (rowCount === 0) {
-    await admin.query(`create database ${dbName}`);
+    await admin.query(`create database ${dbName} ${UTF8}`);
     console.log(`created database ${dbName}`);
   }
 } finally {

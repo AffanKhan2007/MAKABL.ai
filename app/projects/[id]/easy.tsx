@@ -42,7 +42,7 @@ export function EasyOverview({ project, plan, presets, current, conflicts, featu
   canChange: boolean;
 }) {
   const c = costs(plan);
-  const things = conflicts.map(plainLanguage).filter((t): t is string => !!t).slice(0, 5);
+  const things = [...new Set(conflicts.map(plainLanguage).filter((t): t is string => !!t))].slice(0, 5);
 
   return (
     <>
