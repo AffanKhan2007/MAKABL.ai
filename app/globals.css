@@ -32,6 +32,22 @@
   --font-sans: var(--font-geist-sans), system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   color-scheme: dark;
+
+  /* Motion: one rhythm for the whole app. Entrances decelerate, exits accelerate. */
+  --dur-instant: 80ms;   /* press */
+  --dur-fast: 140ms;     /* hover, toggles */
+  --dur-base: 220ms;     /* state changes, disclosures */
+  --dur-slow: 360ms;     /* relay phase changes */
+  --dur-slower: 560ms;   /* the one hero moment */
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-exit: cubic-bezier(0.7, 0, 0.84, 0);
+  --hover-lift: -1px;
+  --card-lift: -2px;
+}
+/* Reduced motion: drop travel, keep fades and colour changes. */
+@media (prefers-reduced-motion: reduce) {
+  :root { --hover-lift: 0px; --card-lift: 0px; --dur-slow: 160ms; --dur-slower: 200ms; }
 }
 
 /* Light theme: follows the system unless the visitor picked one (data-theme on <html>). */
@@ -260,10 +276,17 @@ button, .button {
   color: var(--accent-ink); font: 600 14px/1.2 var(--font-sans);
   cursor: pointer; text-decoration: none;
   box-shadow: 0 8px 22px -12px var(--accent);
-  transition: transform 120ms, box-shadow 120ms, filter 120ms;
+  transition:
+    transform var(--dur-fast) var(--ease-standard),
+    box-shadow var(--dur-fast) var(--ease-standard),
+    filter var(--dur-fast) var(--ease-standard),
+    background-color var(--dur-fast) var(--ease-standard),
+    border-color var(--dur-fast) var(--ease-standard),
+    color var(--dur-fast) var(--ease-standard);
 }
-button:hover, .button:hover { filter: brightness(1.06); text-decoration: none; transform: translateY(-1px); }
-button:active, .button:active { transform: translateY(0); }
+button:hover, .button:hover { filter: brightness(1.06); text-decoration: none; transform: translateY(var(--hover-lift)); }
+/* Press is the feedback that matters on a phone: quick, small, no travel. */
+button:active, .button:active { transform: scale(0.97); transition-duration: var(--dur-instant); }
 button.secondary, .button.secondary {
   background: var(--surface-2); color: var(--text); border-color: var(--border-strong); box-shadow: none;
 }
@@ -297,7 +320,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; filter: n
 .feed-empty { padding: 18px 14px; color: #6b7a8d; font: 13px var(--font-mono); }
 .live-dot { width: 8px; height: 8px; border-radius: 50%; background: #4ade80; box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.6); animation: pulse 1.8s infinite; }
 @keyframes pulse { 70% { box-shadow: 0 0 0 8px rgba(74, 222, 128, 0); } 100% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0); } }
-@media (prefers-reduced-motion: reduce) { .live-dot { animation: none; } button:hover, .button:hover { transform: none; } }
+@media (prefers-reduced-motion: reduce) { .live-dot { animation: none; } }
 
 /* ---------- KPIs & stepper ---------- */
 .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
@@ -319,8 +342,8 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; filter: n
 
 /* ---------- projects ---------- */
 .project-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
-.project-card { display: block; color: var(--text); transition: border-color 120ms, transform 120ms; }
-.project-card:hover { border-color: var(--border-strong); text-decoration: none; transform: translateY(-2px); }
+.project-card { display: block; color: var(--text); transition: border-color var(--dur-fast) var(--ease-standard), transform var(--dur-fast) var(--ease-standard); }
+.project-card:hover { border-color: var(--border-strong); text-decoration: none; transform: translateY(var(--card-lift)); }
 .project-card h2 { margin-bottom: 4px; }
 .project-list { list-style: none; padding: 0; margin: 0; }
 
@@ -338,6 +361,19 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; filter: n
 .mock-line:last-of-type { border-bottom: 0; }
 .bar { height: 6px; border-radius: 999px; background: var(--surface-3); overflow: hidden; margin-top: 10px; }
 .bar > span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+/* Signature effect, landing page: the sample cap fills, then the Budget Gate pause lands. The
+   pitch in two seconds. Both are fully visible without CSS animation, and the headline (the
+   page's largest paint) never waits on them. Reduced motion: no fill travel, the notice fades. */
+@media (prefers-reduced-motion: no-preference) {
+  .mock .meter > span { animation: cap-fill var(--dur-slower) var(--ease-enter) 350ms both; }
+  .mock .gate-pause { animation: gate-pause var(--dur-slow) var(--ease-enter) 1000ms both; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mock .gate-pause { animation: fade-in var(--dur-slower) linear 600ms both; }
+}
+@keyframes cap-fill { from { transform: scaleX(0); } }
+@keyframes gate-pause { from { opacity: 0; transform: translateY(6px); } }
+@keyframes fade-in { from { opacity: 0; } }
 .section-title { text-align: center; margin: 24px 0 26px; }
 .section-title h2 { font-size: 26px; letter-spacing: -0.02em; margin: 10px 0 6px; }
 .feature-icon { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); font: 600 14px var(--font-mono); margin-bottom: 12px; }
@@ -423,8 +459,41 @@ button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; filter: n
 .relay-step-card { position: relative; background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: var(--radius-sm); padding: 10px 12px; display: grid; gap: 6px; min-width: 0; }
 .relay-step-card + .relay-step-card::before { content: "→"; position: absolute; left: -17px; top: 18px; color: var(--accent); font: 600 14px var(--font-mono); }
 @media (max-width: 760px) { .relay-step-card + .relay-step-card::before { display: none; } }
+/* Phase changes glide (transitions never fire on first paint, so a loaded page stays still). */
+.relay-step-card {
+  transition: border-color var(--dur-slow) var(--ease-standard), box-shadow var(--dur-slow) var(--ease-standard);
+}
 .relay-step-card.s-running { border-color: var(--warn); box-shadow: 0 0 0 3px var(--warn-bg); }
 .relay-step-card.s-done { border-color: color-mix(in srgb, var(--good) 45%, var(--border)); }
+/* Spend against allowance: scaleX instead of width so a refresh glides on the compositor. */
+.meter > span { width: 100%; transform: scaleX(var(--fill, 0)); transform-origin: left center; transition: transform var(--dur-slow) var(--ease-standard); }
+
+/* Signature effect, project page: the phase that is working shows it. A light runs along the
+   bottom edge of the running card, and the arrow handing work to it pulses. Both stop the moment
+   the phase finishes, and under reduced motion (the "running" badge and border still say it). */
+@media (prefers-reduced-motion: no-preference) {
+  .relay-step-card.s-running::after {
+    content: ""; position: absolute; left: 10px; right: 10px; bottom: -1px; height: 2px; border-radius: 2px;
+    background: linear-gradient(90deg, transparent, var(--warn), transparent) no-repeat;
+    background-size: 40% 100%;
+    animation: relay-scan 1.6s linear infinite;
+  }
+  .relay-step-card.s-running::before { animation: relay-handoff 1.2s var(--ease-standard) infinite; }
+}
+@keyframes relay-scan { from { background-position: -40% 0; } to { background-position: 140% 0; } }
+@keyframes relay-handoff { 0%, 100% { opacity: 0.35; transform: translateX(-3px); } 50% { opacity: 1; transform: translateX(1px); } }
+
+/* Briefs and reviews open smoothly where the browser supports animating to auto; elsewhere they snap. */
+@media (prefers-reduced-motion: no-preference) {
+  .handoff-detail { interpolate-size: allow-keywords; }
+  .handoff-detail::details-content {
+    block-size: 0; overflow: clip;
+    transition: block-size var(--dur-base) var(--ease-enter), content-visibility var(--dur-base) allow-discrete;
+  }
+  .handoff-detail[open]::details-content { block-size: auto; }
+}
+.handoff-detail summary { transition: color var(--dur-fast) var(--ease-standard); }
+.handoff-detail summary:hover { color: var(--text); }
 .relay-model { font: 600 14px var(--font-mono); overflow-wrap: anywhere; }
 .handoff-detail { border: 1px dashed var(--border-strong); border-radius: var(--radius-sm); padding: 8px 12px; }
 .handoff-detail summary { cursor: pointer; }

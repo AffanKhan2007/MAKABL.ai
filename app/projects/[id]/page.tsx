@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import type { CSSProperties } from 'react';
 import { PRIOR_RETRY_RATE, type CostLine, type PathPlan } from '../../../src/estimator/estimator.ts';
 import { gate, isRunning } from '../../../src/server/builds.ts';
 import { liveModeStatus } from '../../../src/server/live-mode.ts';
@@ -233,7 +234,7 @@ export default async function ProjectPage({
           <div className="kpi-label">Spent</div>
           <div className="kpi-value">{money(spent)}</div>
           {budget
-            ? <div className="bar" aria-label={`${Math.round((spent / budget.projectCap) * 100)}% of cap`}><span style={{ width: `${Math.min(100, (spent / budget.projectCap) * 100)}%` }} /></div>
+            ? <div className="bar meter" aria-label={`${Math.round((spent / budget.projectCap) * 100)}% of cap`}><span style={{ '--fill': Math.min(1, spent / budget.projectCap) } as CSSProperties} /></div>
             : <div className="kpi-note">nothing yet</div>}
         </div>
       </div>}
