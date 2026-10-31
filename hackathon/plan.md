@@ -11,9 +11,9 @@ pauses to ask before going over.
 
 ## Rules
 
-Prior work is **allowed if disclosed** (confirmed). The line is the git tag `pre-hackathon`;
-see `hackathon/DISCLOSURE.md`. Judges will weigh what we build *this weekend*, so the
-weekend's headline work must be visible on stage:
+Prior work is **allowed if disclosed** (confirmed). We disclose it in one line of the written
+submission only, never on stage (`hackathon/DISCLOSURE.md`, git tag `pre-hackathon`). The
+weekend's headline work is what the demo shows:
 
 1. **A real live build** (#1): Claude building a real feature, under the cap, on screen or
    recorded. Before the event it had never run.

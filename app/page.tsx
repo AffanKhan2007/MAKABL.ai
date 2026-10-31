@@ -105,7 +105,7 @@ export default async function Landing() {
       </div>
 
       <footer className="footer">
-        <span>MAKABL · built for the hackathon on our own prototype (see the disclosure)</span>
+        <span>MAKABL · plan it, cap it, prove it</span>
         <span className="num">Next.js · Postgres · Claude</span>
       </footer>
     </main>

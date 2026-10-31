@@ -32,7 +32,13 @@ git log --format='%h %ad %s' --date=iso pre-hackathon..HEAD
 git diff --stat pre-hackathon HEAD
 ```
 
-## What we say in the pitch
+## Where this appears
 
-One sentence, early: "We started this weekend from our own prototype of the cost engine
-and Budget Gate. This weekend we made it build real apps live, and put it online."
+Not in the pitch, the demo or the app. Only one line in the written submission (the
+form's "prior work" field, or the README if there is no field):
+
+> Built on our own prototype of the cost engine and Budget Gate (24–29 Oct). This
+> weekend: live AI builds you can open and run, the redesigned app, and the public demo.
+> Details: `hackathon/DISCLOSURE.md`, git tag `pre-hackathon`.
+
+If a judge asks, answer in one sentence with the same facts and move on.
