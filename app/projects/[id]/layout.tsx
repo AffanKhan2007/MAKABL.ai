@@ -1,9 +1,8 @@
-import type { ReactNode } from 'react';
 import { getMode } from '../../../src/server/mode.ts';
 import { getProject } from '../../../src/server/projects.ts';
 import { SideNav, type SideGroup } from './side-nav.tsx';
 
-export default async function ProjectLayout({ children, params }: { children: ReactNode; params: Promise<{ id: string }> }) {
+export default async function ProjectLayout({ children, params }: LayoutProps<'/projects/[id]'>) {
   const { id } = await params;
   const project = await getProject(id);
   if (!project) return <>{children}</>;
