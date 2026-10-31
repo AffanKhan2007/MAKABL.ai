@@ -1,0 +1,8 @@
+{
+  "name": "Remix MAKABL | AI App Cost Forecast \u0026 Builder",
+  "description": "Pre-build cost forecasting, strict budget caps, and structured AI application pipeline manager.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

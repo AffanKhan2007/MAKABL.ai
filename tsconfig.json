@@ -1,49 +1,28 @@
 {
   "compilerOptions": {
-    "target": "ES2023",
+    "target": "ES2022",
+    "experimentalDecorators": true,
+    "useDefineForClassFields": false,
+    "module": "ESNext",
+    "types": ["vite/client"],
     "lib": [
-      "ES2023",
+      "ES2022",
       "DOM",
       "DOM.Iterable"
     ],
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "jsx": "react-jsx",
-    "strict": true,
-    "noEmit": true,
-    "allowImportingTsExtensions": true,
-    "erasableSyntaxOnly": true,
-    "verbatimModuleSyntax": true,
-    "noUncheckedIndexedAccess": true,
-    "isolatedModules": true,
-    "resolveJsonModule": true,
     "skipLibCheck": true,
-    "incremental": true,
-    "plugins": [
-      {
-        "name": "next"
-      }
-    ],
+    "moduleResolution": "bundler",
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "allowJs": true,
+    "jsx": "react-jsx",
     "paths": {
       "@/*": [
         "./*"
       ]
     },
-    "allowJs": true,
-    "esModuleInterop": true
+    "allowImportingTsExtensions": true,
+    "noEmit": true
   },
-  "include": [
-    "next-env.d.ts",
-    "app",
-    "src",
-    "test",
-    "scripts",
-    ".next/types/**/*.ts",
-    ".next/dev/types/**/*.ts"
-  ],
-  "exclude": [
-    "node_modules",
-    ".workspaces",
-    ".pgdata"
-  ]
+  "exclude": ["dist"]
 }
