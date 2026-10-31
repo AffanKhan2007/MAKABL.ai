@@ -395,7 +395,9 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
       if (relay) {
         const dsn = designFor(designs, feature.name);
         const sources = async () => {
-          const paths = (await workspace.list('app').catch(() => [] as string[])).filter((p) => /\.(css|tsx?)$/.test(p)).slice(0, 25);
+          // Wording often lives in a data file next to the page, so look beyond app/.
+          const listed = (await Promise.all(['app', 'lib', 'components', 'src'].map((d) => workspace.list(d).catch(() => [] as string[])))).flat();
+          const paths = listed.filter((p) => /\.(css|tsx?)$/.test(p) && !/\.test\./.test(p) && !/^tests?\//.test(p)).slice(0, 30);
           const out: Array<{ path: string; content: string }> = [];
           for (const path of paths) out.push({ path, content: (await workspace.read(path).catch(() => '')).slice(0, 8_000) });
           return out;
@@ -415,7 +417,9 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
                 notes.length ? `Owner's instructions:\n${notes.join('\n')}` : 'Owner instructions: none',
                 fid ? `Mechanical check against the chosen render: ${Math.round(fid.score * 100)}% matched. Missing colours: ${fid.missingColours.join(', ') || 'none'}. Missing wording: ${fid.missingTexts.map((t) => `"${t}"`).join(', ') || 'none'}.` : 'No render to compare against.',
                 dsn ? `Render checklist:\n${designReference(dsn).split('Reference HTML:')[0]}` : '',
-                'Code:', ...files.map((f) => `--- ${f.path}\n${f.content.slice(0, 3_000)}`),
+                'Code (a file marked [clipped] continues beyond what is shown; never call a clipped file incomplete):', ...files.map((f) => `--- ${f.path}
+${f.content.length > 7_000 ? `${f.content.slice(0, 7_000)}
+[clipped]` : f.content}`),
               ].join('\n\n'),
               maxTokens: 900, taskCeiling: budget.projectCap,
             }));
@@ -431,6 +435,11 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
                 acceptance: mode.acceptance(slug, []), model: buildModel, taskCeiling: budget.projectCap,
                 retryLimit: 1, retryCostLimit: budget.projectCap, maxTurns: Math.min(mode.maxTurns, 12), maxTokens: mode.maxTokens, effort: 'high',
               });
+              // Measure again, so the record shows what the repair changed.
+              if (dsn) {
+                const after = fidelity(dsn, (await sources()).map((f) => f.content));
+                await once(`fidelity-after:${taskId}`, 'relay_fidelity', taskId, { feature: feature.name, page: dsn.page, render: dsn.n, after: true, ...after });
+              }
             }
           } catch (err) {
             if (err instanceof BudgetBlockedError || err instanceof ProviderLimitError) throw err;
