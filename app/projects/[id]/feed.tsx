@@ -102,7 +102,7 @@ export function Feed({ projectId }: { projectId: string }) {
           <span className="dots" aria-hidden><span /><span /><span /></span>
           <span className="terminal-title">live feed · event log</span>
         </div>
-        <span className="row small" style={{ gap: 8, color: connected ? '#4ade80' : '#8a97a8', fontFamily: 'var(--font-mono)' }}>
+        <span className="row small" style={{ gap: 8, color: connected ? 'var(--good)' : 'var(--muted)', fontFamily: 'var(--font-mono)' }}>
           {connected && <span className="live-dot" aria-hidden />}
           {connected ? 'live' : 'connecting'}
         </span>

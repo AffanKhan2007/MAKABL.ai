@@ -5,8 +5,7 @@ import type { ReactNode } from 'react';
 import { DB_UNAVAILABLE_MESSAGE, isDbUnavailable } from '../src/server/db.ts';
 import { getSessionUser } from '../src/server/session.ts';
 import { getMode } from '../src/server/mode.ts';
-import { signOutAction } from './auth-actions.ts';
-import { setModeAction } from './mode-actions.ts';
+import { NavBar } from './nav-bar.tsx';
 import './globals.css';
 
 const sans = Geist({ subsets: ['latin'], variable: '--font-geist-sans' });
@@ -21,20 +20,22 @@ export function Brand({ href }: { href: string }) {
   return (
     <Link href={href} className="brand" aria-label="MAKABL home">
       <span className="brand-mark" aria-hidden>M</span>
-      MAKABL
+      <span>MAKABL</span>
     </Link>
   );
 }
 
-function Shell({ children, right, home }: { children: ReactNode; right?: ReactNode; home: string }) {
+const themeScript = `(function(){try{var t=localStorage.getItem('makabl-theme');if(t==='light'||t==='dark'){document.documentElement.setAttribute('data-theme',t);}else{document.documentElement.removeAttribute('data-theme');}}catch(e){}})();`;
+
+function Shell({ children, user, mode }: { children: ReactNode; user: Awaited<ReturnType<typeof getSessionUser>>; mode: 'easy' | 'pro' }) {
   return (
-    <html lang="en" className={`${sans.variable} ${mono.variable}`}>
+    <html lang="en" className={`${sans.variable} ${mono.variable}`} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
       <body>
         <div className="shell">
-          <header className="topbar">
-            <Brand href={home} />
-            {right}
-          </header>
+          <NavBar user={user} mode={mode} />
           {children}
         </div>
       </body>
@@ -49,37 +50,25 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   } catch (err) {
     if (!isDbUnavailable(err)) throw err;
     return (
-      <Shell home="/">
-        <main className="auth">
-          <h1>Can&rsquo;t reach the database</h1>
-          <p className="notice bad">{DB_UNAVAILABLE_MESSAGE}</p>
-        </main>
-      </Shell>
+      <html lang="en" className={`${sans.variable} ${mono.variable}`} suppressHydrationWarning>
+        <head>
+          <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        </head>
+        <body>
+          <div className="shell">
+            <header className="topbar">
+              <Brand href="/" />
+            </header>
+            <main className="auth">
+              <h1>Can&rsquo;t reach the database</h1>
+              <p className="notice bad">{DB_UNAVAILABLE_MESSAGE}</p>
+            </main>
+          </div>
+        </body>
+      </html>
     );
   }
 
   const mode = await getMode();
-  const right = user ? (
-    <div className="user">
-      <form action={setModeAction} className="mode-switch" aria-label="Interface mode">
-        <button type="submit" name="mode" value="easy" aria-pressed={mode === 'easy'} title="Plain words, fewer choices">Easy</button>
-        <button type="submit" name="mode" value="pro" aria-pressed={mode === 'pro'} title="Every model, phase and number">Pro</button>
-      </form>
-      <nav className="nav" aria-label="Main">
-        <Link href="/projects">Projects</Link>
-        <Link href="/projects/new">New project</Link>
-      </nav>
-      <form action={signOutAction} className="row">
-        <span className="muted small email">{user.email}</span>
-        <button type="submit" className="secondary small">Sign out</button>
-      </form>
-    </div>
-  ) : (
-    <nav className="nav" aria-label="Account">
-      <Link href="/login">Sign in</Link>
-      <Link href="/signup" className="button small">Get started</Link>
-    </nav>
-  );
-
-  return <Shell home={user ? '/projects' : '/'} right={right}>{children}</Shell>;
+  return <Shell user={user} mode={mode}>{children}</Shell>;
 }
