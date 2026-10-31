@@ -1736,3 +1736,24 @@ input:disabled, textarea:disabled, select:disabled {
 @keyframes render-in { from { opacity: 0; transform: scale(0.985) translateY(6px); } }
 @keyframes render-scan { from { transform: translateY(0); } to { transform: translateY(560px); } }
 @media (max-width: 640px) { .render-stage { padding: 10px; } .render-frame iframe { height: 460px; } }
+
+/* Project sidebar */
+.with-side { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 28px; align-items: start; }
+.with-side-body { min-width: 0; }
+.side-nav { position: sticky; top: 76px; display: flex; flex-direction: column; gap: 18px; padding: 16px 0; }
+.side-name { margin: 0; font-weight: 600; font-size: 15px; overflow-wrap: anywhere; }
+.side-group { display: flex; flex-direction: column; gap: 2px; }
+.side-title { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+.side-nav a { display: block; padding: 7px 10px; border-radius: 8px; color: var(--text-2); text-decoration: none; font-size: 14px; border-left: 2px solid transparent; transition: background var(--dur-fast, .15s) var(--ease-standard, ease), color var(--dur-fast, .15s) var(--ease-standard, ease); }
+.side-nav a:hover { background: var(--surface-2, rgba(127,127,127,.1)); color: var(--text); }
+.side-nav a.active { background: var(--surface-2, rgba(127,127,127,.12)); color: var(--text); border-left-color: var(--accent); font-weight: 600; }
+html { scroll-behavior: smooth; scroll-padding-top: 84px; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+@media (max-width: 900px) {
+  .with-side { grid-template-columns: 1fr; gap: 0; }
+  .side-nav { position: static; flex-direction: row; gap: 6px; overflow-x: auto; padding: 4px 0 12px; scrollbar-width: thin; }
+  .side-name, .side-title { display: none; }
+  .side-group { flex-direction: row; gap: 6px; }
+  .side-nav a { white-space: nowrap; border: 1px solid var(--border, rgba(127,127,127,.25)); border-radius: 999px; padding: 6px 12px; }
+  .side-nav a.active { border-color: var(--accent); }
+}

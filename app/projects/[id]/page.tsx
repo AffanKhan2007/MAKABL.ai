@@ -266,7 +266,7 @@ export default async function ProjectPage({
       {easy && presets ? (
         <EasyOverview project={project} plan={plan} presets={presets} current={presetOf(project.spec)}
           conflicts={explore.conflicts} features={report.features} canChange={!running} />
-      ) : <section className="card">
+      ) : <section id="features" className="card">
         <h2>Features</h2>
         <p className="muted small" style={{ marginTop: -6 }}>Quoted from the paid path; actual from the ledger.</p>
         <div className="table-wrap">
@@ -343,7 +343,7 @@ export default async function ProjectPage({
       )}
 
       {!easy && <>
-      <h2 style={{ marginTop: 24 }}>Cost plan</h2>
+      <h2 id="cost" style={{ marginTop: 24 }}>Cost plan</h2>
       <p className="muted small" style={{ marginTop: -6 }}>
         Covers {HORIZON_TEXT[project.spec.horizon]}, {project.spec.relay
           ? <>run as a relay: {labelOf(project.spec.relay.spec)} → {labelOf(project.spec.relay.architect)} → {modelLabel} → {labelOf(project.spec.relay.review)}.</>
@@ -388,7 +388,7 @@ export default async function ProjectPage({
       </>}
 
       <div className="grid2" style={{ marginTop: 24 }}>
-        <section className="card stack">
+        <section id="budget" className="card stack">
           <h2 style={{ margin: 0 }}>{easy ? 'Spending limit' : 'Budget'}</h2>
           {project.state !== 'costed' && budget ? (
             <>
@@ -427,7 +427,7 @@ export default async function ProjectPage({
           )}
         </section>
 
-        <section className="card stack">
+        <section id="build" className="card stack">
           <h2 style={{ margin: 0 }}>Build</h2>
           {!budget && <p className="muted" style={{ margin: 0 }}>Approve the plan first.</p>}
           {running && <p className="notice warn" style={{ margin: 0 }}>Building now. Follow it in the live feed.</p>}
@@ -492,7 +492,7 @@ export default async function ProjectPage({
       </div>
 
       {anyBuilt && (
-        <section className="card stack">
+        <section id="app" className="card stack">
           <div className="row spread">
             <h2 style={{ margin: 0 }}>Your app</h2>
             {preview && <span className={`badge ${preview.status === 'running' ? 'good' : preview.status === 'failed' ? 'bad' : ''}`}>{preview.status}</span>}
@@ -580,7 +580,7 @@ export default async function ProjectPage({
       ))}
 
       {anyBuilt && !easy && (
-        <section className="card stack">
+        <section id="verification" className="card stack">
           <h2 style={{ margin: 0 }}>Verification report</h2>
           <p className="muted small" style={{ margin: 0 }}>
             &ldquo;Verified&rdquo; means the checks below passed, nothing more. Who wrote each check&rsquo;s tests is shown.
@@ -627,7 +627,7 @@ export default async function ProjectPage({
         : <Feed projectId={id} />}
 
       {ledger.length > 0 && !easy && (
-        <section className="card">
+        <section id="ledger" className="card">
           <h2>Ledger</h2>
           <p className="muted small" style={{ marginTop: -6 }}>Every charge the Budget Gate booked, from system records.</p>
           <div className="table-wrap">
