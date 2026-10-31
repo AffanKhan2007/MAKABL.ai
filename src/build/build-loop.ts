@@ -66,6 +66,8 @@ export const BUILDER_SYSTEM_PROMPT = [
 const MAX_READ_CHARS = 200_000;
 /** Extra tries for one turn's model call after it fails. */
 const CALL_RETRIES = 2;
+/** Provider errors that retrying cannot fix: no quota or credits left, or a bad or missing key. */
+const PROVIDER_REFUSED = /\b(401|403|429)\b|quota|credit balance|billing|api[ _-]?key/i;
 
 const TOOLS: Anthropic.Beta.Messages.BetaTool[] = [
   {
@@ -201,7 +203,16 @@ export class FeatureBuilder {
           }
         }
         if (!msg) {
-          stopNote = `The model call failed: ${lastError instanceof Error ? lastError.message : String(lastError)}`;
+          const error = (lastError instanceof Error ? lastError.message : String(lastError)).slice(0, 300);
+          await emit('model_call_failed', { attempt, turn, error });
+          if (PROVIDER_REFUSED.test(error)) {
+            // Quota, credits or the key: another attempt fails the same way and books another
+            // worst case, so stop now and say why.
+            const reason = `The model provider refused the call: ${error}`;
+            await emit('task_failed', { reason, attempts: attempt });
+            return { status: 'failed', reason, attempts: attempt, checks, run: await record(false) };
+          }
+          stopNote = `The model call failed: ${error}`;
           break;
         }
         // Pass the content back unchanged, thinking blocks included, as the API requires.

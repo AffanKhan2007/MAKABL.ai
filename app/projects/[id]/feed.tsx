@@ -47,6 +47,7 @@ function describe(e: FeedEvent): string {
     case 'task_verified': return `${task}verified after ${p.attempts} attempt(s)`;
     case 'task_failed': return `${task}failed: ${p.reason}`;
     case 'task_refused': return `${task}the model declined the request`;
+    case 'model_call_failed': return `${task}model call failed: ${p.error}`;
     case 'calibration_recorded': return `${task}run recorded: ${money(num(p.cost))} over ${p.calls} calls`;
     case 'workspace_ready': return `project prepared${p.templateWritten ? ' from the starter template' : ''}; dependencies installed in ${p.seconds}s (exit ${p.installExit})`;
     case 'build_mode_changed': return `build mode set to ${p.mode}`;
@@ -62,7 +63,7 @@ function toneOf(e: FeedEvent): string {
     case 'task_verified': case 'approval_decided': case 'task_resumed': return 't-good';
     case 'checks_run': case 'project_checks_run': return e.payload.passed ? 't-good' : 't-bad';
     case 'budget_blocked': case 'task_paused': case 'approval_requested': return 't-warn';
-    case 'task_failed': case 'task_refused': case 'budget_overshoot': return 't-bad';
+    case 'task_failed': case 'task_refused': case 'budget_overshoot': case 'model_call_failed': return 't-bad';
     case 'tool_executed': return e.payload.isError ? 't-bad' : 't-accent';
     default: return '';
   }
