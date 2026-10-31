@@ -103,6 +103,13 @@ export async function startBuildAction(projectId: string, form: FormData): Promi
   }
   const blocked = liveBlocker(provider);
   if (blocked) return back(projectId, `Cannot build live on ${modelLabel(project.spec.buildModel)}: ${blocked}.`);
+  // A stop the owner has not answered is answered on the steer page, not by pressing Resume again.
+  const evts = await new PgEventLog(db(), await userScope()).list(projectId);
+  const v = `v${project.specVersion}`;
+  const stop = [...evts].reverse().find((e) => e.type === 'relay_checkpoint' && e.payload.v === v);
+  if (form.get('checkpoint') !== 'none' && stop && !evts.some((e) => e.type === 'owner_approved' && e.payload.v === v && e.payload.stage === stop.payload.stage)) {
+    redirect(`/projects/${projectId}/steer`);
+  }
   const level = String(form.get('checkpoint') ?? '');
   if (['none', 'brief', 'feature'].includes(level)) {
     await new PgEventLog(db(), await userScope()).append({ projectId, taskId: null, type: 'owner_checkpoint', payload: { level } });

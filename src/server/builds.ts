@@ -205,9 +205,6 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
     await setProjectState(projectId, 'paused', userId);
     return;
   }
-  // Show the app as it is written. Not awaited: the first compile takes a while, and a live
-  // view that fails to start must never stop the build.
-  void startLivePreview(projectId, workspaceDir(projectId)).catch(() => {});
 
   const done = await verifiedTasks(projectId, userId);
   const plan = await planFor(project.spec);
@@ -335,6 +332,9 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
       if (first.level !== 'none' && !first.approved.has('brief')) return await stop('brief', 'The plan is ready for your review');
     }
 
+  // Show the app as it is written, once the build proper starts (not while it waits for the owner, when there is only the empty template to show). Not awaited: the first compile takes a while, and a live
+  // view that fails to start must never stop the build.
+  void startLivePreview(projectId, workspaceDir(projectId)).catch(() => {});
     await once('started:build', 'relay_phase_started', null, { phase: 'build', model: caller.current(buildModel) ?? buildModel });
     for (const [index, feature] of project.spec.features.entries()) {
       const owner = await ownerView();

@@ -158,6 +158,8 @@ export default async function ProjectPage({
   const scope = await userScope();
   const report = await loadReport(project, scope);
   const projectEvents = await new PgEventLog(db(), scope).list(id);
+  const stopEv = [...projectEvents].reverse().find((e) => e.type === 'relay_checkpoint' && e.payload.v === `v${project.specVersion}`);
+  const waitingForOwner = !!stopEv && !projectEvents.some((e) => e.type === 'owner_approved' && e.payload.v === `v${project.specVersion}` && e.payload.stage === stopEv.payload.stage);
   const relay = project.spec.relay;
   const showRelay = !!relay || projectEvents.some((e) => e.type === 'relay_phase_started');
   const plannedModels = {
@@ -441,6 +443,9 @@ export default async function ProjectPage({
             <p className="notice good" style={{ margin: 0 }}>
               Every feature and the whole-project checks passed; see the verification report. Deploying is not built yet.
             </p>
+          )}
+          {project.state === 'paused' && !running && waitingForOwner && (
+            <p className="notice" style={{ margin: 0 }}>The build is waiting for you, not stuck. <Link href={`/projects/${id}/steer`}>Review the plan and continue</Link>.</p>
           )}
           {approvals.length > 0 && <p className="notice bad" style={{ margin: 0 }}>Paused: decide the approval below to continue.</p>}
           {budget && project.state !== 'verifying' && (
