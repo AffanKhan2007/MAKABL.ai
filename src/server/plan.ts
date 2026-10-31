@@ -6,6 +6,7 @@ import { PricingRegistry, tokenRatesFor } from '../registry/pricing.ts';
 import { seedPrices } from '../registry/seed.ts';
 import { db } from './db.ts';
 import { liveModeStatus } from './live-mode.ts';
+import { fetchLivePrices, priceDrift } from '../registry/live-prices.ts';
 import type { ProjectSpec } from './projects.ts';
 
 export const registry = new PricingRegistry(seedPrices);
@@ -33,7 +34,9 @@ export const today = (): string => new Date().toISOString().slice(0, 10);
 /** What-if knobs that are not saved on the spec. */
 export interface PlanOverrides { buildDate?: string }
 
-export function estimateInputFor(spec: ProjectSpec, overrides: PlanOverrides = {}): EstimateInput {
+export function estimateInputFor(
+  spec: ProjectSpec, overrides: PlanOverrides = {}, measured?: EstimateInput['measured'],
+): EstimateInput {
   const assumptions = {
     ...(spec.retryRate != null ? { retryRate: spec.retryRate } : {}),
     ...(spec.caching === false ? { caching: false } : {}),
@@ -48,6 +51,7 @@ export function estimateInputFor(spec: ProjectSpec, overrides: PlanOverrides = {
     unpricedItems: spec.unpricedItems,
     ...(spec.relay ? { relay: spec.relay } : {}),
     ...(Object.keys(assumptions).length ? { assumptions } : {}),
+    ...(measured && Object.keys(measured).length ? { measured } : {}),
   };
 }
 
@@ -56,7 +60,25 @@ const runsFor = (spec: ProjectSpec) =>
 
 /** The cost plan for a spec, from the registry and every logged calibration run. */
 export async function planFor(spec: ProjectSpec, overrides: PlanOverrides = {}): Promise<CostPlan> {
-  return estimate(estimateInputFor(spec, overrides), registry, await runsFor(spec), today());
+  // Loaded here, not at the top: it reads the signed-in user, which only exists inside the app.
+  const { measuredPhases } = await import('./measured.ts');
+  const [measured, live] = await Promise.all([measuredPhases(), fetchLivePrices(registry)]);
+  const plan = estimate(estimateInputFor(spec, overrides, measured), registry, await runsFor(spec), today());
+  return annotateWithLive(plan, live);
+}
+
+/** Say, in the plan's own assumptions, what the live price check found and when. */
+function annotateWithLive(plan: CostPlan, live: Awaited<ReturnType<typeof fetchLivePrices>>): CostPlan {
+  if (!live) {
+    plan.assumptions.push('Live price check unavailable (could not reach the price source); prices are from the last manual check');
+    return plan;
+  }
+  const drift = priceDrift(live, registry, today());
+  plan.assumptions.push(
+    `Prices cross-checked live against OpenRouter at ${live.fetchedAt.slice(11, 16)} UTC: ${live.found} of ${live.asked} models found, `
+    + (drift.length ? `${drift.length} differ from our price list (flagged below if this plan uses one)` : 'all match'),
+  );
+  return plan;
 }
 
 /**
@@ -74,10 +96,13 @@ export function liveBlocker(provider: string): string | null {
 export async function planWithConflicts(
   spec: ProjectSpec, ctx: Omit<ConflictContext, 'liveBlocker'> = {}, overrides: PlanOverrides = {},
 ): Promise<{ plan: CostPlan; conflicts: Conflict[] }> {
-  const input = estimateInputFor(spec, overrides);
+  // Loaded here, not at the top: it reads the signed-in user, which only exists inside the app.
+  const { measuredPhases } = await import('./measured.ts');
+  const [measured, live] = await Promise.all([measuredPhases(), fetchLivePrices(registry)]);
+  const input = estimateInputFor(spec, overrides, measured);
   const runs = await runsFor(spec);
-  const plan = estimate(input, registry, runs, today());
-  return { plan, conflicts: findConflicts(input, plan, registry, runs, today(), { ...ctx, liveBlocker }) };
+  const plan = annotateWithLive(estimate(input, registry, runs, today()), live);
+  return { plan, conflicts: findConflicts(input, plan, registry, runs, today(), { ...ctx, liveBlocker, livePrices: live }) };
 }
 
 /**

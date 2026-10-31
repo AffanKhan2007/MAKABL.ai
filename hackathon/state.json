@@ -177,6 +177,12 @@
       "text": "Lovable connector: create_project/send_message via its MCP (OAuth, credits); see hackathon/builder-platforms.md",
       "tier": "could",
       "status": "open"
+    },
+    {
+      "id": 29,
+      "text": "REMIND USER: make the builder match the approved render (layout, look, requirements): pass the chosen render to the builder and check the built app against it",
+      "tier": "should",
+      "status": "open"
     }
   ]
 }

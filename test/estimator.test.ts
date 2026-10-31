@@ -222,3 +222,32 @@ test('announced price changes apply from their date', () => {
     .relay!.phases.find((p) => p.phase === 'architect')!.range.expected;
   assert.ok(Math.abs(cost('2026-12-15') - 2 * cost('2026-11-15')) <= 2);
 });
+
+test('measured phase usage replaces the prior, and the estimate says it is measured', async () => {
+  const { aggregateMeasured } = await import('../src/estimator/measured.ts');
+  const measured = aggregateMeasured([
+    { phase: 'spec', tokens: { input: 200, output: 360 } },                       // an older run: one call
+    { phase: 'spec', usage: { input: 220, output: 400, calls: 1 } },
+    { phase: 'review', usage: { input: 6_000, output: 600, calls: 3 } },          // three features reviewed
+    { phase: 'build', usage: { input: 99_999, output: 99_999, calls: 9 } },        // not a relay phase here: ignored
+    { phase: 'architect', usage: { input: 0, output: 0, calls: 0 } },              // nothing recorded: ignored
+  ]);
+  assert.deepEqual(measured.spec, { inputPerCall: 210, outputPerCall: 380, calls: 2, runs: 2 });
+  assert.deepEqual(measured.review, { inputPerCall: 2_000, outputPerCall: 200, calls: 3, runs: 1 });
+  assert.equal(measured.architect, undefined);
+
+  const base2 = { ...base, relay: RELAY };
+  const withPrior = estimate(base2, registry, [], TODAY);
+  const withData = estimate({ ...base2, measured }, registry, [], TODAY);
+  const line = (p: typeof withData) => p.paths[1].lines.find((l) => l.phase === 'spec')!;
+  assert.match(line(withData).quantityAssumption, /Measured: 2 real call\(s\) over 2 run\(s\) averaged 210 tokens in and 380 out/);
+  assert.match(line(withPrior).quantityAssumption, /^Prior:/);
+  assert.notEqual(line(withData).range!.expected, line(withPrior).range!.expected);
+});
+
+test('a handoff brief is as large as the phase that wrote it, not a fixed size', () => {
+  const plan = estimate({ ...base, relay: RELAY, measured: { spec: { inputPerCall: 500, outputPerCall: 300, calls: 1, runs: 1 } } }, registry, [], TODAY);
+  const first = plan.relay!.handoffs.find((h) => h.from === 'spec')!;
+  assert.equal(first.briefTokens, 300);
+  assert.equal(first.transcriptTokens, 800);
+});
