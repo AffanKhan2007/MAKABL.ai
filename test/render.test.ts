@@ -98,3 +98,24 @@ test('the facts a render commits to are measured in the built code', () => {
   const miss = fidelity(d, [':root{--a:#5c3a21} <h1>Bakery</h1>']);
   assert.ok(miss.score < 0.5 && miss.missingColours.includes('#d48344') && miss.missingTexts.includes('Order now'));
 });
+
+import { featurePoints, qualityScore } from '../src/relay/quality.ts';
+
+test('quality counts only what was measured, and retries cost points', () => {
+  assert.equal(qualityScore({ verified: true, attempts: 1, fidelity: 1, verdict: 'APPROVE' }).score, 100);
+  assert.equal(qualityScore({ verified: true, attempts: 1, fidelity: null, verdict: null }).score, 100, 'nothing measured is left out, not failed');
+  assert.equal(qualityScore({ verified: true, attempts: 1, fidelity: 0.5, verdict: null }).score, 75);
+  assert.ok(qualityScore({ verified: true, attempts: 3, fidelity: 1, verdict: 'APPROVE' }).score < 100);
+  assert.equal(qualityScore({ verified: false, attempts: 2, fidelity: 0, verdict: 'REVISE' }).score, 8);
+});
+
+test('feature points add up the feature, its repair, review and overseer costs in build order', () => {
+  const events = [
+    { type: 'task_verified', taskId: 'a', payload: { attempts: 1 } },
+    { type: 'relay_fidelity', taskId: 'a', payload: { score: 0.5 } },
+    { type: 'task_verified', taskId: 'b', payload: { attempts: 1 } },
+  ];
+  const cost = new Map([['a', 100], ['a:align', 20], ['review:a', 5], ['review:oversee:a', 5], ['b', 50]]);
+  const pts = featurePoints([{ name: 'A', taskId: 'a' }, { name: 'B', taskId: 'b' }, { name: 'C', taskId: 'c' }], events, cost);
+  assert.deepEqual(pts.map((p) => [p.feature, p.cost, p.cumulative, p.score]), [['A', 130, 130, 75], ['B', 50, 180, 100]]);
+});

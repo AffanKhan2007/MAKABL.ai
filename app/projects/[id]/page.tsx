@@ -206,6 +206,7 @@ export default async function ProjectPage({
         <span className="muted num">spec v{project.specVersion}</span>
         {!running && <Link href={`/projects/${id}/edit`}>Change the spec</Link>}
         <Link href={`/projects/${id}/steer`}>{easy ? 'Tell it what you want' : 'Plan and steer'}</Link>
+        {!easy && <Link href={`/projects/${id}/quality`}>Quality vs cost</Link>}
         <Link href={`/projects/${id}/renders`}>{easy ? 'See how it will look' : 'Wireframe & renders'}</Link>
         <a href={`/api/projects/${id}/export`}>Export (zip)</a>
       </div>
