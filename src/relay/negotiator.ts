@@ -14,7 +14,7 @@ import type { Phase } from '../estimator/estimator.ts';
 
 export const SLACK_SHARE = 0.2;
 
-export type Outcome = 'granted' | 'reassigned' | 'escalated' | 'returned';
+export type Outcome = 'granted' | 'reassigned' | 'escalated' | 'declined' | 'returned';
 
 export interface Decision {
   phase: Phase;
@@ -24,6 +24,8 @@ export interface Decision {
   /** Phase the allowance came from, for 'reassigned'. */
   from?: Phase;
   reason: string;
+  /** Who asked: the system (a call would not fit its allowance) or the model itself, with its own reason. */
+  by?: 'system' | 'model';
 }
 
 export interface PhaseBudget {
@@ -83,27 +85,38 @@ export class Negotiator {
     const p = this.get(phase);
     const short = p.spent + worstCase - p.allowance;
     if (short <= 0) return null;
+    return this.fund(phase, short, reason, 'system', 'escalated');
+  }
 
+  /**
+   * A model asks for more room for its phase and says why. Answered the same way: from slack,
+   * then from a phase that will not need its allowance, otherwise declined (the model keeps
+   * working within what it has; if a call then does not fit, the Budget Gate asks the user).
+   */
+  ask(phase: Phase, amount: Micros, reason: string): Decision {
+    return this.fund(phase, amount, reason, 'model', 'declined')!;
+  }
+
+  private fund(phase: Phase, need: Micros, reason: string, by: 'system' | 'model', failure: 'escalated' | 'declined'): Decision | null {
+    const p = this.get(phase);
     let decision: Decision;
-    if (this.slack >= short) {
-      this.slack -= short;
-      p.allowance += short;
-      decision = { phase, outcome: 'granted', amount: short, reason };
+    if (this.slack >= need) {
+      this.slack -= need;
+      p.allowance += need;
+      decision = { phase, outcome: 'granted', amount: need, reason, by };
     } else {
       const lender = [...this.phases.values()]
-        .filter((o) => o.phase !== phase && this.spare(o) >= short - this.slack)
+        .filter((o) => o.phase !== phase && this.spare(o) >= need - this.slack)
         .sort((a, b) => this.spare(b) - this.spare(a))[0];
       if (lender) {
-        const fromLender = short - this.slack;
-        lender.allowance -= fromLender;
-        p.allowance += short;
+        lender.allowance -= need - this.slack;
+        p.allowance += need;
         this.slack = 0;
-        decision = { phase, outcome: 'reassigned', amount: short, from: lender.phase, reason };
+        decision = { phase, outcome: 'reassigned', amount: need, from: lender.phase, reason, by };
       } else {
-        // Nothing left to move inside the cap: the Budget Gate decides, and pauses for the
-        // user if the project cap itself would be crossed.
-        p.allowance += short;
-        decision = { phase, outcome: 'escalated', amount: short, reason };
+        // Nothing left to move inside the cap. The allowance is NOT raised: the Budget Gate then
+        // blocks the call against it and asks the user, who can raise the cap.
+        decision = { phase, outcome: failure, amount: need, reason, by };
       }
     }
     this.decisions.push(decision);

@@ -142,6 +142,20 @@ describe('row-level security', { skip: ready ? false : 'no database with db/role
     await assert.rejects(new PgToolLog(admin, projectA, asB).put('t:a1:t1:toolu_2', { content: 'x', isError: false }), /row-level security/);
   });
 
+  test('an event too large to broadcast is still stored, and the feed is told something happened', async () => {
+    const asA = { role: APP_ROLE, userId: userA };
+    const log = new PgEventLog(admin, asA);
+    const seen: Array<{ type: string; large?: unknown }> = [];
+    const stop = await log.subscribe((e) => seen.push({ type: e.type, large: e.payload.large }), { projectId: projectA });
+    const html = '<p>x</p>'.repeat(10_000); // ~80 KB, far over NOTIFY's 8,000-byte limit
+    const e = await log.append({ projectId: projectA, taskId: null, type: 'relay_render', payload: { html } });
+    assert.equal(e.payload.html, html);
+    await new Promise((r) => setTimeout(r, 400));
+    await stop();
+    assert.deepEqual(seen.filter((s) => s.type === 'relay_render'), [{ type: 'relay_render', large: true }]);
+    assert.equal(((await log.list(projectA)).find((x) => x.seq === e.seq)?.payload.html as string).length, html.length);
+  });
+
   test('model and test-runner text outside Windows-1252 is stored intact', async () => {
     // Test runners print ✖ and models write arrows and emoji; a WIN1252 database rejects them.
     const asA = { role: APP_ROLE, userId: userA };

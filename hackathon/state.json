@@ -180,21 +180,9 @@
     },
     {
       "id": 29,
-      "text": "Design mockups page: AI wireframe after approval, ask for another version, tokens + cost per version",
-      "tier": "must",
-      "status": "done"
-    },
-    {
-      "id": 30,
-      "text": "Relay timeline: tokens per phase, negotiation before/after",
-      "tier": "must",
-      "status": "done"
-    },
-    {
-      "id": 31,
-      "text": "Qwen Cloud vendor (free token allowance) for a live end-to-end build",
+      "text": "REMIND USER: make the builder match the approved render (layout, look, requirements): pass the chosen render to the builder and check the built app against it",
       "tier": "should",
-      "status": "open"
+      "status": "done"
     }
   ]
 }

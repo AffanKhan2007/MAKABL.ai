@@ -1,4 +1,14 @@
 import { startLivePreview, stopLivePreview } from '../build/preview.ts';
+import { rebuildRequests, roundOf, withRound } from '../relay/rebuild.ts';
+import { designFor, designReference, designTargets, DESIGN_GUIDE, fidelity } from '../relay/render.ts';
+
+// Appended to the builder's instructions: it has a budget and a way to ask for more.
+const BUDGET_GUIDE = [
+  'You work under a spending budget set by the owner. If what this feature genuinely needs is more',
+  'than the room you have, call request_budget with the extra amount in US dollars and a specific',
+  'reason; the answer is immediate. Ask rarely and for real needs. A declined request means finish',
+  'within what you have.',
+].join(' ');
 import { workspaceDir } from './paths.ts';
 import Anthropic from '@anthropic-ai/sdk';
 import {
@@ -23,7 +33,7 @@ import { BudgetBlockedError, BudgetGate } from '../gate/budget-gate.ts';
 import { Negotiator, type Decision } from '../relay/negotiator.ts';
 import {
   approxTokens, ARCHITECT_SYSTEM, architectPrompt, phaseCall, phaseOfTask, RELAY_TASK, RelayCaller, REVIEW_SYSTEM,
-  reviewPrompt, reviewTaskId, SPEC_SYSTEM, specPrompt, textOf, tokensOf, verdictOf,
+  OVERSEER_SYSTEM, reviewPrompt, reviewTaskId, SPEC_SYSTEM, specPrompt, textOf, tokensOf, verdictOf,
 } from '../relay/relay.ts';
 import { FallbackCaller } from '../relay/fallback.ts';
 import { db } from './db.ts';
@@ -166,6 +176,15 @@ function writtenFiles(evts: ActivityEvent[], taskId: string): string[] {
   return [...new Set(paths)].slice(-4);
 }
 
+/** One Gate-protected adapter per vendor whose key is configured on this server. */
+export function buildAdapters(gate: BudgetGate): Partial<Record<string, ClaudeAdapter>> {
+  const adapters: Partial<Record<string, ClaudeAdapter>> = {};
+  for (const p of ['anthropic', 'google', 'openai']) {
+    if (liveModeStatus(process.env, p).available) adapters[p] = new ClaudeAdapter(gate, registry, liveSetup(p).transport, p);
+  }
+  return adapters;
+}
+
 async function runBuild(projectId: string, userId: string): Promise<void> {
   const scope = await userScope(userId);
   const project = await getProject(projectId, userId);
@@ -184,10 +203,7 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
 
   // One adapter per vendor whose key is configured. A relay phase on any other vendor runs
   // on the build model instead, and the substitution is recorded.
-  const adapters: Partial<Record<string, ClaudeAdapter>> = {};
-  for (const p of ['anthropic', 'google', 'openai', 'qwen']) {
-    if (liveModeStatus(process.env, p).available) adapters[p] = new ClaudeAdapter(gate, registry, liveSetup(p).transport, p);
-  }
+  const adapters = buildAdapters(gate);
 
   // Not running in this process (startBuild checked), so any reservation still held is
   // from a build that was cut off; settle those before carrying on.
@@ -197,9 +213,6 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
     await setProjectState(projectId, 'paused', userId);
     return;
   }
-  // Show the app as it is written. Not awaited: the first compile takes a while, and a live
-  // view that fails to start must never stop the build.
-  void startLivePreview(projectId, workspaceDir(projectId)).catch(() => {});
 
   const done = await verifiedTasks(projectId, userId);
   const plan = await planFor(project.spec);
@@ -210,7 +223,27 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
 
   // A resumed build replays its calls from the Gate, and with them the negotiation, so each
   // relay event is recorded once per spec version.
-  const recorded = new Set((await events.list(projectId)).map((e) => e.payload.key).filter(Boolean));
+  const history = await events.list(projectId);
+  const recorded = new Set(history.map((e) => e.payload.key).filter(Boolean));
+  // The render the owner chose as the target look, if any: the builder builds to it and the
+  // reviewer checks the result against it.
+  const designs = designTargets(history);
+  const designOf = (feature: string) => { const d = designFor(designs, feature); return d ? designReference(d) : undefined; };
+  // What the owner added along the way: edits to the architect's brief, notes for the builder,
+  // and how often to stop for a look. Read again before each feature, so a note added while
+  // the build runs is picked up by the next feature.
+  const ownerView = async () => {
+    const all = await events.list(projectId);
+    const edit = [...all].reverse().find((e) => e.type === 'owner_brief_edit' && e.payload.v === v);
+    const level = String([...all].reverse().find((e) => e.type === 'owner_checkpoint')?.payload.level ?? 'none');
+    const approved = new Set(all.filter((e) => e.type === 'owner_approved' && e.payload.v === v).map((e) => String(e.payload.stage)));
+    const notes = all.filter((e) => e.type === 'owner_note' && e.payload.v !== undefined).map((e) => ({ feature: e.payload.feature ? String(e.payload.feature) : null, text: String(e.payload.text) }));
+    return { rebuilds: rebuildRequests(all), edit: edit ? String(edit.payload.text) : null, level, approved, notes };
+  };
+  const stop = async (stage: string, label: string) => {
+    await events.append({ projectId, taskId: null, type: 'relay_checkpoint', payload: { v, stage, label } });
+    return pause();
+  };
   const once = async (key: string, type: EventType, taskId: string | null, payload: Record<string, unknown>) => {
     const k = `${v}:${key}`;
     if (recorded.has(k)) return;
@@ -224,9 +257,18 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
     : [{ phase: 'build' as Phase, expected: buildLines.reduce((t, l) => t + l.range!.expected, 0) }];
   const negotiator = Negotiator.fromPlan(budget.projectCap, expected);
   await once('budget', 'relay_budget', null, { cap: budget.projectCap, ...negotiator.snapshot() });
+  // A resumed build does not re-run the tool calls it already made, so the room the builder asked
+  // for and was given is re-applied here from the record, in order.
+  let askNo = 0;
+  for (const e of await events.list(projectId)) {
+    const p = e.payload as Record<string, unknown>;
+    if (e.type !== 'negotiation' || p.by !== 'model' || !String(p.key).startsWith(`${v}:ask:`)) continue;
+    askNo++;
+    if (p.outcome === 'granted' || p.outcome === 'reassigned') negotiator.ask(p.phase as Phase, Number(p.amount), String(p.reason));
+  }
   let decisionNo = 0;
-  const onDecision = (d: Decision) =>
-    once(`negotiation:${decisionNo++}`, 'negotiation', null, { ...d, after: negotiator.snapshot() });
+  const onDecision = (d: Decision, before: ReturnType<Negotiator['snapshot']>) =>
+    once(d.by === 'model' ? `ask:${askNo++}` : `negotiation:${decisionNo++}`, 'negotiation', null, { ...d, before, after: negotiator.snapshot() });
   // A Gemini model whose free quota runs out mid-build hands its calls to the next one.
   const relayCaller = new RelayCaller({ adapters, registry, negotiator, onDecision });
   const caller = new FallbackCaller(relayCaller, (s) =>
@@ -245,11 +287,12 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
     return buildModel;
   };
   const finishPhase = async (phase: Phase, model: string, extra: Record<string, unknown> = {}) => {
+    const before = negotiator.snapshot();
     const d = negotiator.finish(phase);
-    if (d) await onDecision(d);
+    if (d) await onDecision(d, before);
     await once(`finished:${phase}`, 'relay_phase_finished', null, {
       // The model that last ran the phase, after any quota or overload switch.
-      phase, model: caller.current(model) ?? model, spent: negotiator.phases.get(phase)?.spent ?? 0, tokens: relayCaller.tokensFor(phase), ...extra,
+      phase, model: caller.current(model) ?? model, spent: negotiator.phases.get(phase)?.spent ?? 0, usage: relayCaller.usage(phase), ...extra,
     });
   };
   const pause = () => setProjectState(projectId, 'paused', userId);
@@ -268,7 +311,7 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
       }));
       const specBrief = textOf(specMsg);
       const specTokens = tokensOf(specMsg);
-      await finishPhase('spec', specModel);
+      await finishPhase('spec', specModel, { tokens: specTokens });
 
       // Architect: works from the spec brief, never the spec phase's transcript.
       const archModel = await modelFor('architect');
@@ -284,7 +327,7 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
       }));
       architectBrief = textOf(archMsg);
       const archTokens = tokensOf(archMsg);
-      await finishPhase('architect', archModel);
+      await finishPhase('architect', archModel, { tokens: archTokens });
       await once('handoff:architect', 'relay_handoff', null, {
         from: 'architect', to: 'build', fromModel: archModel, toModel: buildModel, brief: architectBrief.slice(0, 6_000),
         briefTokens: archTokens.output,
@@ -292,24 +335,55 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
         historyTokens: specTokens.input + specTokens.output + archTokens.input + archTokens.output,
       });
       reviewModel = await modelFor('review');
+      // Pro: stop here so the owner can read the plan, change it and add instructions.
+      const first = await ownerView();
+      if (first.level !== 'none' && !first.approved.has('brief')) return await stop('brief', 'The plan is ready for your review');
     }
 
+  // Show the app as it is written, once the build proper starts (not while it waits for the owner, when there is only the empty template to show). Not awaited: the first compile takes a while, and a live
+  // view that fails to start must never stop the build.
+  void startLivePreview(projectId, workspaceDir(projectId)).catch(() => {});
     await once('started:build', 'relay_phase_started', null, { phase: 'build', model: caller.current(buildModel) ?? buildModel });
-    for (const feature of project.spec.features) {
+    for (const [index, feature] of project.spec.features.entries()) {
+      const owner = await ownerView();
+      if (owner.edit) architectBrief = owner.edit;
+      const notes = owner.notes.filter((n) => !n.feature || n.feature === feature.name).map((n) => `- ${n.text}`);
+      const design = designOf(feature.name);
       // Stable per name, type and criteria: unchanged features stay done across spec edits.
-      const taskId = taskIdFor(feature);
+      const round = roundOf(owner.rebuilds, feature.name);
+      const taskId = withRound(taskIdFor(feature), round);
       if (done.has(taskId)) continue;
       const slug = featureSlug(feature.name);
       const quoted = paid.lines.find((l) => l.label === `Build: ${feature.name}`)?.range;
+      let asks = 0;
       const builder = new FeatureBuilder({
         adapter: caller, workspace, events, tools, runs: mode.runs,
         verifier: new Verifier(mode.checksFor(slug)),
-        systemPrompt: mode.systemPrompt,
+        systemPrompt: [mode.systemPrompt, DESIGN_GUIDE, BUDGET_GUIDE].join('\n\n'),
+        // The builder can ask for room itself. The budget manager answers for real: from slack,
+        // from a phase that will not need its allowance, or no.
+        requestBudget: async (amountUsd, reason) => {
+          if (++asks > 3) return 'You have already made three requests for this feature. Work within the room you have.';
+          const micros = Math.round(amountUsd * 1_000_000);
+          const most = Math.floor(budget.projectCap * 0.25);
+          if (micros > most) return `Too much: one request may not exceed 25% of the project cap ($${(most / 1_000_000).toFixed(2)}). Ask for less, or finish within your room.`;
+          const before = negotiator.snapshot();
+          const d = negotiator.ask('build', micros, reason.slice(0, 300));
+          await onDecision(d, before);
+          const left = negotiator.phases.get('build')!;
+          const room = `$${(Math.max(0, left.allowance - left.spent) / 1_000_000).toFixed(4)}`;
+          if (d.outcome === 'granted') return `Granted $${amountUsd.toFixed(4)} from unspent slack. The build phase now has ${room} left.`;
+          if (d.outcome === 'reassigned') return `Granted $${amountUsd.toFixed(4)}, moved from the ${d.from} phase, which will not need it. The build phase now has ${room} left.`;
+          return `Declined: no unspent room is left in the project cap. You have ${room}. Finish what you can within it; if a call would not fit, the owner is asked to raise the limit.`;
+        },
       });
       const out = await builder.build({
         projectId, taskId, featureType: feature.type, featureName: feature.name,
         spec: `${project.spec.idea}\n\nBuild the "${feature.name}" feature.`
-          + (architectBrief ? `\n\nTechnical brief from the architect (follow it):\n${architectBrief}` : ''),
+          + (round ? '\n\nThis feature was built before and the owner was not happy with it. Rebuild it: replace the existing implementation so that it matches the design reference and the owner\'s instructions below, and keep nothing that conflicts with them.' : '')
+          + (architectBrief ? `\n\nTechnical brief from the architect (follow it):\n${architectBrief}` : '')
+          + (notes.length ? `\n\nThe owner's own instructions (they override the brief above if they conflict):\n${notes.join('\n')}` : '')
+          + (design ? `\n\n${design}` : ''),
         acceptance: mode.acceptance(slug, feature.acceptance),
         model: buildModel,
         taskCeiling: budget.projectCap,
@@ -322,6 +396,55 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
       });
       if (out.status !== 'verified') return pause();
 
+      // Overseer: a coordinating model checks what was built against the render, the owner's
+      // instructions and the plan, and sends the builder a fix list. The mechanical colour and
+      // wording check runs first, so the overseer starts from facts, not impressions.
+      if (relay) {
+        const dsn = designFor(designs, feature.name);
+        const sources = async () => {
+          const paths = (await workspace.list('app').catch(() => [] as string[])).filter((p) => /\.(css|tsx?)$/.test(p)).slice(0, 25);
+          const out: Array<{ path: string; content: string }> = [];
+          for (const path of paths) out.push({ path, content: (await workspace.read(path).catch(() => '')).slice(0, 8_000) });
+          return out;
+        };
+        const files = await sources();
+        const fid = dsn ? fidelity(dsn, files.map((f) => f.content)) : null;
+        if (fid) await once(`fidelity:${taskId}`, 'relay_fidelity', taskId, { feature: feature.name, page: dsn!.page, render: dsn!.n, ...fid });
+        const gaps = fid && fid.score < 1;
+        if (gaps || notes.length) {
+          try {
+            const msg = await callPhase(caller, phaseCall({
+              projectId, taskId: `review:oversee:${taskId}`, idempotencyKey: `${projectId}:${v}:oversee:${taskId}`,
+              description: `Overseer: ${feature.name}`, model: reviewModel, system: OVERSEER_SYSTEM,
+              prompt: [
+                `Feature: ${feature.name}`,
+                `Plan (architect):\n${architectBrief.slice(0, 3_000)}`,
+                notes.length ? `Owner's instructions:\n${notes.join('\n')}` : 'Owner instructions: none',
+                fid ? `Mechanical check against the chosen render: ${Math.round(fid.score * 100)}% matched. Missing colours: ${fid.missingColours.join(', ') || 'none'}. Missing wording: ${fid.missingTexts.map((t) => `"${t}"`).join(', ') || 'none'}.` : 'No render to compare against.',
+                dsn ? `Render checklist:\n${designReference(dsn).split('Reference HTML:')[0]}` : '',
+                'Code:', ...files.map((f) => `--- ${f.path}\n${f.content.slice(0, 3_000)}`),
+              ].join('\n\n'),
+              maxTokens: 900, taskCeiling: budget.projectCap,
+            }));
+            const text = textOf(msg);
+            const fixes = /^FIX:/im.test(text) ? text.slice(text.search(/^FIX:/im)).slice(0, 1_500) : '';
+            await once(`oversee:${taskId}`, 'relay_review', `review:oversee:${taskId}`, {
+              feature: feature.name, model: reviewModel, verdict: fixes ? 'REVISE' : 'APPROVE', review: `Overseer: ${text.slice(0, 2_500)}`, overseer: true,
+            });
+            if (fixes) {
+              await builder.build({
+                projectId, taskId: `${taskId}:align`, featureType: feature.type, featureName: `${feature.name} (align)`,
+                spec: `${project.spec.idea}\n\nThe "${feature.name}" feature is built and passes its checks. Change ONLY what is listed below, keep everything else working, and keep the checks passing.\n\n${fixes}`,
+                acceptance: mode.acceptance(slug, []), model: buildModel, taskCeiling: budget.projectCap,
+                retryLimit: 1, retryCostLimit: budget.projectCap, maxTurns: Math.min(mode.maxTurns, 12), maxTokens: mode.maxTokens, effort: 'high',
+              });
+            }
+          } catch (err) {
+            if (err instanceof BudgetBlockedError || err instanceof ProviderLimitError) throw err;
+          }
+        }
+      }
+
       if (relay) {
         // Review: a separate model reads the feature's code and check results, not its transcript.
         const files: Array<{ path: string; content: string }> = [];
@@ -330,7 +453,7 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
           if (content) files.push({ path, content: content.length > 12_000 ? `${content.slice(0, 12_000)}
 [clipped by MAKABL at 12,000 characters; the file continues]` : content });
         }
-        const prompt = reviewPrompt({ feature: feature.name, acceptance: feature.acceptance, checks: out.checks, files });
+        const prompt = reviewPrompt({ ...(design ? { design } : {}), feature: feature.name, acceptance: feature.acceptance, checks: out.checks, files });
         const t = out.run.tokens;
         await once(`handoff:review:${taskId}`, 'relay_handoff', reviewTaskId(taskId), {
           from: 'build', to: 'review', feature: feature.name, fromModel: buildModel, toModel: reviewModel,
@@ -357,6 +480,11 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
             review: `Review could not run: ${err instanceof Error ? err.message : String(err)}`,
           });
         }
+      }
+      // Pro, "after every feature": stop for a look before the next one.
+      const after = await ownerView();
+      if (after.level === 'feature' && index < project.spec.features.length - 1 && !after.approved.has(`feature:${taskId}`)) {
+        return await stop(`feature:${taskId}`, `${feature.name} is built; look before the next feature`);
       }
     }
     await finishPhase('build', buildModel);

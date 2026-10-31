@@ -336,11 +336,20 @@ create trigger calibration_runs_append_only before update or delete on calibrati
   for each row execute function forbid_mutation();
 
 -- Live feed: NOTIFY fires only when the inserting transaction commits.
+-- Oversized events broadcast a small notice (NOTIFY is limited to 8,000 bytes); see db/patches/001-notify-size.sql.
 create function notify_activity_event() returns trigger language plpgsql as $$
+declare
+  msg text;
 begin
-  perform pg_notify('activity_events', json_build_object(
+  msg := json_build_object(
     'seq', new.seq, 'project_id', new.project_id, 'task_id', new.task_id, 'type', new.type,
-    'payload', new.payload, 'annotation', new.annotation, 'created_at', new.created_at)::text);
+    'payload', new.payload, 'annotation', new.annotation, 'created_at', new.created_at)::text;
+  if octet_length(msg) > 7000 then
+    msg := json_build_object(
+      'seq', new.seq, 'project_id', new.project_id, 'task_id', new.task_id, 'type', new.type,
+      'payload', json_build_object('large', true), 'annotation', null, 'created_at', new.created_at)::text;
+  end if;
+  perform pg_notify('activity_events', msg);
   return new;
 end $$;
 

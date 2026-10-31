@@ -11,7 +11,6 @@ import { RETRY_CHOICES, whatIf } from '../../../src/server/what-if.ts';
 import { WhatIf } from './what-if.tsx';
 import { EasyOverview } from './easy.tsx';
 import { RelayTimeline } from './relay-timeline.tsx';
-import { rendersOf } from '../../../src/server/design.ts';
 import { LiveView } from './live-view.tsx';
 import { PgEventLog } from '../../../src/db/pg-event-log.ts';
 import { db } from '../../../src/server/db.ts';
@@ -24,7 +23,7 @@ import { userScope } from '../../../src/server/session.ts';
 import { loadReport, type FeatureStatus } from '../../../src/server/verification.ts';
 import { previewOf } from '../../../src/build/preview.ts';
 import {
-  approvePlanAction, decideApprovalAction, deleteProjectAction, setBuildModeAction, startBuildAction,
+  approvePlanAction, decideApprovalAction, deleteProjectAction, rebuildAction, setBuildModeAction, startBuildAction,
   startPreviewAction, stopPreviewAction,
 } from './actions.ts';
 
@@ -159,10 +158,9 @@ export default async function ProjectPage({
   const scope = await userScope();
   const report = await loadReport(project, scope);
   const projectEvents = await new PgEventLog(db(), scope).list(id);
+  const stopEv = [...projectEvents].reverse().find((e) => e.type === 'relay_checkpoint' && e.payload.v === `v${project.specVersion}`);
+  const waitingForOwner = !!stopEv && !projectEvents.some((e) => e.type === 'owner_approved' && e.payload.v === `v${project.specVersion}` && e.payload.stage === stopEv.payload.stage);
   const relay = project.spec.relay;
-  const mockups = rendersOf(projectEvents);
-  const mockupCost = mockups.reduce((t, r) => t + r.cost, 0);
-  const mockupTokens = mockups.reduce((t, r) => t + r.tokens.input + r.tokens.output, 0);
   const showRelay = !!relay || projectEvents.some((e) => e.type === 'relay_phase_started');
   const plannedModels = {
     spec: relay?.spec ?? project.spec.buildModel,
@@ -209,6 +207,9 @@ export default async function ProjectPage({
       <div className="row small" style={{ margin: '10px 0 18px' }}>
         <span className="muted num">spec v{project.specVersion}</span>
         {!running && <Link href={`/projects/${id}/edit`}>Change the spec</Link>}
+        <Link href={`/projects/${id}/steer`}>{easy ? 'Tell it what you want' : 'Plan and steer'}</Link>
+        {!easy && <Link href={`/projects/${id}/quality`}>Quality vs cost</Link>}
+        <Link href={`/projects/${id}/renders`}>{easy ? 'See how it will look' : 'Wireframe & renders'}</Link>
         <a href={`/api/projects/${id}/export`}>Export (zip)</a>
       </div>
 
@@ -265,7 +266,7 @@ export default async function ProjectPage({
       {easy && presets ? (
         <EasyOverview project={project} plan={plan} presets={presets} current={presetOf(project.spec)}
           conflicts={explore.conflicts} features={report.features} canChange={!running} />
-      ) : <section className="card">
+      ) : <section id="features" className="card">
         <h2>Features</h2>
         <p className="muted small" style={{ marginTop: -6 }}>Quoted from the paid path; actual from the ledger.</p>
         <div className="table-wrap">
@@ -334,21 +335,6 @@ export default async function ProjectPage({
         </section>
       )}
 
-      <section className="card row spread design-link">
-        <div>
-          <span className="eyebrow">{easy ? 'Before we build' : 'Design mockup'}</span>
-          <h2 style={{ margin: '4px 0 2px' }}>{easy ? 'See what it will look like' : 'Wireframe'}</h2>
-          <p className="muted small" style={{ margin: 0 }}>
-            {mockups.length
-              ? `${mockups.length} version${mockups.length === 1 ? '' : 's'} so far · ${mockupTokens.toLocaleString('en-US')} tokens · ${mockupCost > 0 && mockupCost < 10_000 ? `$${(mockupCost / 1_000_000).toFixed(4)}` : money(mockupCost)}`
-              : budget ? (easy ? 'A quick sketch of the main screens, for a fraction of a cent.' : 'Low-fidelity mockup of the main screens; one cheap call per version, on the cap.')
-                : (easy ? 'Available once your limit is set.' : 'Available once the plan is approved.')}
-          </p>
-        </div>
-        <Link className={`button${mockups.length ? ' secondary' : ''}`} href={`/projects/${id}/design`}>
-          {mockups.length ? (easy ? 'See the sketches' : 'Open mockups') : (easy ? 'Show me' : 'Draw a mockup')}
-        </Link>
-      </section>
       <LiveView projectId={id} building={running} easy={easy} />
 
       {showRelay && (
@@ -357,7 +343,7 @@ export default async function ProjectPage({
       )}
 
       {!easy && <>
-      <h2 style={{ marginTop: 24 }}>Cost plan</h2>
+      <h2 id="cost" style={{ marginTop: 24 }}>Cost plan</h2>
       <p className="muted small" style={{ marginTop: -6 }}>
         Covers {HORIZON_TEXT[project.spec.horizon]}, {project.spec.relay
           ? <>run as a relay: {labelOf(project.spec.relay.spec)} → {labelOf(project.spec.relay.architect)} → {modelLabel} → {labelOf(project.spec.relay.review)}.</>
@@ -402,7 +388,7 @@ export default async function ProjectPage({
       </>}
 
       <div className="grid2" style={{ marginTop: 24 }}>
-        <section className="card stack">
+        <section id="budget" className="card stack">
           <h2 style={{ margin: 0 }}>{easy ? 'Spending limit' : 'Budget'}</h2>
           {project.state !== 'costed' && budget ? (
             <>
@@ -441,7 +427,7 @@ export default async function ProjectPage({
           )}
         </section>
 
-        <section className="card stack">
+        <section id="build" className="card stack">
           <h2 style={{ margin: 0 }}>Build</h2>
           {!budget && <p className="muted" style={{ margin: 0 }}>Approve the plan first.</p>}
           {running && <p className="notice warn" style={{ margin: 0 }}>Building now. Follow it in the live feed.</p>}
@@ -458,6 +444,25 @@ export default async function ProjectPage({
               Every feature and the whole-project checks passed; see the verification report. Deploying is not built yet.
             </p>
           )}
+          {project.state === 'paused' && !running && waitingForOwner && (
+            <p className="notice" style={{ margin: 0 }}>The build is waiting for you, not stuck. <Link href={`/projects/${id}/steer`}>Review the plan and continue</Link>.</p>
+          )}
+          {anyBuilt && !running && budget && (
+            <details className="card stack" style={{ margin: 0 }}>
+              <summary><strong>{easy ? 'Not happy with it? Build it again' : 'Rebuild from the current renders and instructions'}</strong></summary>
+              <form action={rebuildAction.bind(null, id)} className="stack" style={{ marginTop: 10 }}>
+                <p className="muted small" style={{ margin: 0 }}>
+                  Builds the features again using the renders you chose, your instructions and the current spec. It makes new model calls, so it costs money again, inside your limit.
+                </p>
+                <span className="small">{easy ? 'The whole app is built again.' : 'Tick features to rebuild only those; tick none to rebuild every feature.'}</span>
+                {!easy && project.spec.features.map((f) => (
+                  <label key={f.name} className="check"><input type="checkbox" name="features" value={f.name} /> Only {f.name}</label>
+                ))}
+                <label className="check"><input type="checkbox" name="confirm" value="yes" required /> I approve the new model calls.</label>
+                <button type="submit">Rebuild</button>
+              </form>
+            </details>
+          )}
           {approvals.length > 0 && <p className="notice bad" style={{ margin: 0 }}>Paused: decide the approval below to continue.</p>}
           {budget && project.state !== 'verifying' && (
             <form action={startBuildAction.bind(null, id)}>
@@ -465,6 +470,14 @@ export default async function ProjectPage({
                 <p className="muted small" style={{ margin: '0 0 10px' }}>
                   Google may use prompts sent on its free API tier to improve its products. Use a paid-tier key for prompts excluded from product improvement.
                 </p>
+              )}
+              {!easy && (
+                <div className="row" style={{ marginBottom: 10 }}>
+                  <label htmlFor="checkpoint">Stop for me</label>
+                  <select id="checkpoint" name="checkpoint" defaultValue="brief">
+                    <option value="none">Never</option><option value="brief">After the plan is written</option><option value="feature">After every feature</option>
+                  </select>
+                </div>
               )}
               <label className="check" style={{ marginBottom: 10 }}>
                 <input type="checkbox" name="confirm" value="yes" required />
@@ -479,7 +492,7 @@ export default async function ProjectPage({
       </div>
 
       {anyBuilt && (
-        <section className="card stack">
+        <section id="app" className="card stack">
           <div className="row spread">
             <h2 style={{ margin: 0 }}>Your app</h2>
             {preview && <span className={`badge ${preview.status === 'running' ? 'good' : preview.status === 'failed' ? 'bad' : ''}`}>{preview.status}</span>}
@@ -567,7 +580,7 @@ export default async function ProjectPage({
       ))}
 
       {anyBuilt && !easy && (
-        <section className="card stack">
+        <section id="verification" className="card stack">
           <h2 style={{ margin: 0 }}>Verification report</h2>
           <p className="muted small" style={{ margin: 0 }}>
             &ldquo;Verified&rdquo; means the checks below passed, nothing more. Who wrote each check&rsquo;s tests is shown.
@@ -614,7 +627,7 @@ export default async function ProjectPage({
         : <Feed projectId={id} />}
 
       {ledger.length > 0 && !easy && (
-        <section className="card">
+        <section id="ledger" className="card">
           <h2>Ledger</h2>
           <p className="muted small" style={{ marginTop: -6 }}>Every charge the Budget Gate booked, from system records.</p>
           <div className="table-wrap">

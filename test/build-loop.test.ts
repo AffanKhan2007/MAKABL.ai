@@ -293,3 +293,48 @@ test('the workspace refuses absolute paths and escapes from the root', async () 
   await workspace.write('src/lib/a.ts', 'ok');
   assert.deepEqual(await workspace.list('.'), ['src/lib/a.ts']);
 });
+
+test('the builder can ask for budget: the request reaches the manager, its answer comes back, and the tool is offered only when one is attached', async () => {
+  const asked: Array<{ amount: number; reason: string }> = [];
+  const root = await mkdtemp(join(tmpdir(), 'makabl-build-'));
+  temps.push(root);
+  const workspace = new Workspace(join(root, 'project'));
+  await workspace.init();
+  const events = new MemoryEventLog();
+  const gate = new BudgetGate(new MemoryGateStore(events));
+  await gate.setBudget('proj', { projectCap: usd(10), monthlyCap: usd(10) });
+  const s = scripted([
+    reply('tool_use', tool('request_budget', { amount_usd: 0.05, reason: 'the schema needs three migrations' })),
+    reply('tool_use', WRITE_OK()),
+    reply('tool_use', tool('run_checks', {})),
+    reply('end_turn'),
+  ]);
+  const builder = new FeatureBuilder({
+    adapter: new ClaudeAdapter(gate, registry, s.transport), workspace, verifier: new Verifier([CHECK]),
+    events, runs: new MemoryRunLog(), tools: new MemoryToolLog(),
+    requestBudget: async (amount, reason) => { asked.push({ amount, reason }); return 'Granted $0.0500 from unspent slack.'; },
+  });
+  const out = await builder.build(task());
+  assert.equal(out.status, 'verified');
+  assert.deepEqual(asked, [{ amount: 0.05, reason: 'the schema needs three migrations' }]);
+  const second = s.sent[1]!.messages as Array<{ role: string; content: unknown }>;
+  assert.equal((second[2]!.content as Array<Record<string, unknown>>)[0]!.content, 'Granted $0.0500 from unspent slack.');
+
+  // Without a manager the tool is not offered at all.
+  const plain = await setup([reply('tool_use', WRITE_OK()), reply('tool_use', tool('run_checks', {})), reply('end_turn')]);
+  await plain.builder.build(task());
+  assert.ok(!JSON.stringify(plain.sent[0]).includes('request_budget'));
+  assert.ok(JSON.stringify(s.sent[0]).includes('request_budget'));
+});
+
+test('a bad budget request is an error the model sees, not a crash', async () => {
+  const { builder, sent } = await setup([
+    reply('tool_use', tool('request_budget', { amount_usd: -3, reason: 'x' })),
+    reply('tool_use', WRITE_OK()), reply('tool_use', tool('run_checks', {})), reply('end_turn'),
+  ]);
+  // No manager attached: the call is refused with an error result.
+  const out = await builder.build(task());
+  assert.equal(out.status, 'verified');
+  const second = sent[1]!.messages as Array<{ role: string; content: unknown }>;
+  assert.equal((second[2]!.content as Array<Record<string, unknown>>)[0]!.is_error, true);
+});

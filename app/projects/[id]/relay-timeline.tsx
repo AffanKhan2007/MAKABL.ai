@@ -17,7 +17,7 @@ const NAME: Record<Phase, { pro: string; easy: string }> = {
   build: { pro: 'Build', easy: 'Building it' },
   review: { pro: 'Review', easy: 'Double-checking' },
 };
-const OUTCOME_TONE: Record<string, string> = { granted: 'good', reassigned: 'accent', escalated: 'warn', returned: '' };
+const OUTCOME_TONE: Record<string, string> = { granted: 'good', reassigned: 'accent', escalated: 'warn', declined: 'bad', returned: '' };
 
 interface Props {
   events: ActivityEvent[];
@@ -53,22 +53,9 @@ export function RelayTimeline({ events, ledger, planned, estimate, label, easy, 
   const snapshot: { phases: PhaseBudget[]; slack: number } | null =
     negotiations.length ? negotiations[negotiations.length - 1]!.after : budgetEvent ? p(budgetEvent) as never : null;
   const allowance = new Map(snapshot?.phases.map((b) => [b.phase, b.allowance]) ?? []);
-  // Each decision records the allowances after it; the ones before it are the previous
-  // snapshot (or the opening allowances), so before → after needs nothing new from the log.
-  type Snap = { phases: PhaseBudget[]; slack: number };
-  const opening: Snap | null = budgetEvent ? (p(budgetEvent) as unknown as Snap) : null;
-  const beforeOf = (i: number): Snap | null => (i === 0 ? opening : (negotiations[i - 1]!.after as Snap));
-  const allowanceIn = (snap: Snap | null, phase: string) => snap?.phases.find((b) => b.phase === phase)?.allowance;
-  const totalTokens = PHASES.reduce((t, ph) => {
-    const tk = finished.get(ph)?.tokens as { input?: number; output?: number } | undefined;
-    return t + Number(tk?.input ?? 0) + Number(tk?.output ?? 0);
-  }, 0);
 
   const spent = new Map<Phase, number>();
-  for (const l of ledger) {
-    if (l.taskId.startsWith('design:')) continue; // mockups are paid from the cap but are not a relay phase
-    spent.set(phaseOfTask(l.taskId), (spent.get(phaseOfTask(l.taskId)) ?? 0) + l.amount);
-  }
+  for (const l of ledger) spent.set(phaseOfTask(l.taskId), (spent.get(phaseOfTask(l.taskId)) ?? 0) + l.amount);
   const hasRun = run.length > 0;
   const savedTokens = handoffs.reduce((t, h) => t + Math.max(0, Number(h.historyTokens) - Number(h.briefTokens)), 0);
 
@@ -82,11 +69,8 @@ export function RelayTimeline({ events, ledger, planned, estimate, label, easy, 
           <span className="eyebrow">{easy ? 'Who is working on it' : 'Model relay · live'}</span>
           <h2 style={{ margin: '4px 0 0' }}>{easy ? 'Four AI helpers, one after another' : 'Relay timeline'}</h2>
         </div>
-        {!easy && hasRun && (savedTokens > 0 || totalTokens > 0) && (
-          <div className="row" style={{ gap: 6 }}>
-            {totalTokens > 0 && <span className="badge">{tokensK(totalTokens)} tokens used</span>}
-            {savedTokens > 0 && <span className="badge good">briefs carried {tokensK(savedTokens)} fewer tokens</span>}
-          </div>
+        {!easy && hasRun && savedTokens > 0 && (
+          <span className="badge good">briefs carried {tokensK(savedTokens)} fewer tokens</span>
         )}
       </div>
       {!hasRun && (
@@ -124,16 +108,6 @@ export function RelayTimeline({ events, ledger, planned, estimate, label, easy, 
                   <div className="row spread small num"><span className="muted">estimate</span><span>{fine(estimate[phase] ?? 0)}</span></div>
                 )
               )}
-              {!easy && (() => {
-                const tk = finished.get(phase)?.tokens as { input?: number; output?: number; calls?: number } | undefined;
-                return tk ? (
-                  <div className="small num" title="Tokens read / written by this phase's model">
-                    <span className="muted">tokens </span>
-                    {tokensK(Number(tk.input ?? 0))} in · {tokensK(Number(tk.output ?? 0))} out
-                    {tk.calls && tk.calls > 1 ? <span className="muted"> · {tk.calls} calls</span> : null}
-                  </div>
-                ) : null;
-              })()}
             </li>
           );
         })}
@@ -170,41 +144,18 @@ export function RelayTimeline({ events, ledger, planned, estimate, label, easy, 
             ? <p className="muted small" style={{ margin: 0 }}>Every phase has stayed inside its allowance so far.</p>
             : (
               <ul className="negotiations">
-                {negotiations.map((d, i) => {
-                  const before = beforeOf(i);
-                  const after = d.after as Snap | undefined;
-                  const moved = [d.phase, ...(d.from ? [d.from] : [])] as string[];
-                  return (
-                    <li key={String(d.key)} className="negotiation">
-                      <div>
-                        <span className={`badge ${OUTCOME_TONE[String(d.outcome)] ?? ''}`}>{String(d.outcome)}</span>{' '}
-                        <span className="small">
-                          <strong>{NAME[d.phase as Phase].pro}</strong> {fine(Number(d.amount))}
-                          {d.outcome === 'reassigned' && d.from ? ` from ${NAME[d.from as Phase].pro}` : ''}
-                          {d.outcome === 'escalated' ? ' (the Budget Gate decides)' : ''}
-                          <span className="muted"> · {String(d.reason)}</span>
-                        </span>
-                      </div>
-                      {before && after && (
-                        <div className="before-after small num" aria-label="Allowances before and after this decision">
-                          {moved.map((ph) => {
-                            const b = allowanceIn(before, ph);
-                            const a = allowanceIn(after, ph);
-                            if (b === undefined || a === undefined) return null;
-                            return (
-                              <span key={ph}>
-                                <span className="muted">{NAME[ph as Phase].pro}</span> {fine(b)} → <strong className={a > b ? 't-up' : a < b ? 't-down' : ''}>{fine(a)}</strong>
-                              </span>
-                            );
-                          })}
-                          {before.slack !== after.slack && (
-                            <span><span className="muted">slack</span> {fine(before.slack)} → <strong className={after.slack > before.slack ? 't-up' : 't-down'}>{fine(after.slack)}</strong></span>
-                          )}
-                        </div>
-                      )}
-                    </li>
-                  );
-                })}
+                {negotiations.map((d) => (
+                  <li key={String(d.key)}>
+                    <span className={`badge ${OUTCOME_TONE[String(d.outcome)] ?? ''}`}>{String(d.outcome)}</span>{' '}
+                    <span className="small">
+                      <strong>{NAME[d.phase as Phase].pro}</strong> {fine(Number(d.amount))}
+                      {d.outcome === 'reassigned' && d.from ? ` from ${NAME[d.from as Phase].pro}` : ''}
+                      {d.outcome === 'escalated' ? ' (the Budget Gate asks you)' : ''}
+                      {d.by === 'model' ? ' · asked by the model' : ''}
+                      <span className="muted"> · {String(d.reason)}</span>
+                    </span>
+                  </li>
+                ))}
               </ul>
             )}
         </div>

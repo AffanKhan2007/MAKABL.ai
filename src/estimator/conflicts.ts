@@ -1,5 +1,6 @@
 import type { CalibrationRun } from '../calibration/runs.ts';
 import type { Micros } from '../domain/types.ts';
+import { priceDrift, type LivePrices } from '../registry/live-prices.ts';
 import { tokenRatesFor, type PricingRegistry } from '../registry/pricing.ts';
 import {
   estimate, PHASES, PRIOR_RETRY_RATE, type CostPlan, type EstimateInput, type Phase,
@@ -27,6 +28,8 @@ export interface ConflictContext {
   capMicros?: Micros;
   /** Live builds are on: phases must have a working adapter and key. */
   live?: boolean;
+  /** Live prices fetched for this plan; null when the source could not be reached, undefined when not checked. */
+  livePrices?: LivePrices | null;
   /** Why a provider cannot run live, or null when it can. */
   liveBlocker?: (provider: string) => string | null;
 }
@@ -88,6 +91,26 @@ export function findConflicts(
         id: 'cap-below-high', severity: 'info',
         title: 'A bad run could hit the cap',
         detail: `Cap ${usd(ctx.capMicros)} covers the expected ${usd(llm.expected)} but not the high end ${usd(llm.high)}. The gate pauses rather than overspends.`,
+      });
+    }
+  }
+
+  // Live check: does a live price source still agree with the prices the plan uses?
+  if (ctx.livePrices === null) {
+    out.push({
+      id: 'live-price-unavailable', severity: 'info',
+      title: 'Live price check unavailable',
+      detail: 'The live price source could not be reached, so the plan uses the registry prices from the last manual check.',
+    });
+  } else if (ctx.livePrices) {
+    for (const d of priceDrift(ctx.livePrices, registry, today)) {
+      if (!usedModels.includes(d.id)) continue;
+      const pct = (x: number) => `${x >= 0 ? '+' : ''}${(x * 100).toFixed(0)}%`;
+      out.push({
+        id: `live-price-drift-${d.id}`, severity: 'warn',
+        title: `${short(d.id)}: live price differs from our price list`,
+        detail: `OpenRouter lists ${short(d.id)} at ${usd(d.live.inputPerMTok)} in / ${usd(d.live.outputPerMTok)} out per 1M tokens (${pct(d.input)} / ${pct(d.output)}) against ${usd(d.registry.inputPerMTok)} / ${usd(d.registry.outputPerMTok)} here, checked ${ctx.livePrices.fetchedAt.slice(11, 16)} UTC. If you pay through OpenRouter, expect the live figure; calling the vendor directly bills its own list price.`,
+        fix: 'Confirm the price on the vendor page before a large build',
       });
     }
   }

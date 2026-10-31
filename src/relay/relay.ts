@@ -51,15 +51,16 @@ export class RelayCaller implements ModelCaller {
   private readonly adapters: Partial<Record<string, ClaudeAdapter>>;
   private readonly registry: PricingRegistry;
   private readonly negotiator: Negotiator;
-  private readonly onDecision: (d: Decision) => Promise<void>;
-  /** Tokens each phase has read and written in this process, for the timeline. */
+  private readonly onDecision: (d: Decision, before: ReturnType<Negotiator['snapshot']>) => Promise<void>;
   private readonly used = new Map<Phase, { input: number; output: number; calls: number }>();
+  /** What each Gate task has spent here, to work out how much of its phase's allowance is left for it. */
+  private readonly taskSpent = new Map<string, number>();
 
   constructor(opts: {
     adapters: Partial<Record<string, ClaudeAdapter>>;
     registry: PricingRegistry;
     negotiator: Negotiator;
-    onDecision: (d: Decision) => Promise<void>;
+    onDecision: (d: Decision, before: ReturnType<Negotiator['snapshot']>) => Promise<void>;
   }) {
     this.adapters = opts.adapters;
     this.registry = opts.registry;
@@ -79,31 +80,44 @@ export class RelayCaller implements ModelCaller {
     const worstCase = worstCaseLlmCost(price, promptTokens, c.maxTokens, c.cache ?? '5m');
     const snap = this.negotiator.phases.get(phase);
     const left = snap ? snap.allowance - snap.spent : 0;
+    const before = this.negotiator.snapshot();
     const decision = this.negotiator.request(
       phase, worstCase,
       `${c.description} could cost up to ${usd(worstCase)}; the ${phase} phase has ${usd(Math.max(0, left))} left`,
     );
-    if (decision) await this.onDecision(decision);
+    if (decision) await this.onDecision(decision, before);
+
+    // Enforcement: the Gate's ceiling for this task is what the phase may still spend on it
+    // (its allowance, less what the phase's other tasks have used). If the negotiator could not
+    // find room, the allowance is unchanged and the Gate blocks the call and asks the user.
+    const after = this.negotiator.phases.get(phase);
+    const taskSpent = this.taskSpent.get(c.taskId) ?? 0;
+    const ceiling = after ? Math.max(0, after.allowance - (after.spent - taskSpent)) : c.taskCeiling;
 
     let msg: ClaudeMessage;
     try {
-      msg = await adapter.call(c);
+      msg = await adapter.call({ ...c, taskCeiling: Math.min(c.taskCeiling, ceiling) });
     } catch (err) {
       // The Gate books a failed call at its worst case unless the provider refused it
       // outright; the phase carries the same so its spend matches the ledger.
-      if (!(err instanceof NotChargedError) && !(err instanceof BudgetBlockedError)) this.negotiator.spend(phase, worstCase);
+      if (!(err instanceof NotChargedError) && !(err instanceof BudgetBlockedError)) {
+        this.negotiator.spend(phase, worstCase);
+        this.taskSpent.set(c.taskId, taskSpent + worstCase);
+      }
       throw err;
     }
-    this.negotiator.spend(phase, priceMessage(msg, price, this.registry, price.provider).cost);
+    const cost = priceMessage(msg, price, this.registry, price.provider).cost;
+    this.negotiator.spend(phase, cost);
+    this.taskSpent.set(c.taskId, taskSpent + cost);
     const t = tokensOf(msg);
     const u = this.used.get(phase) ?? { input: 0, output: 0, calls: 0 };
     this.used.set(phase, { input: u.input + t.input, output: u.output + t.output, calls: u.calls + 1 });
     return msg;
   }
 
-  /** What a phase has used so far: input and output tokens and the number of calls. */
-  tokensFor(phase: Phase): { input: number; output: number; calls: number } {
-    return { ...(this.used.get(phase) ?? { input: 0, output: 0, calls: 0 }) };
+  /** Tokens read and written so far by a phase, across every call it made. */
+  usage(phase: Phase): { input: number; output: number; calls: number } {
+    return this.used.get(phase) ?? { input: 0, output: 0, calls: 0 };
   }
 }
 
@@ -156,12 +170,15 @@ export function architectPrompt(specBrief: string): string {
 }
 
 export function reviewPrompt(opts: {
+  /** The render the owner chose, if any: the review also checks the build against it. */
+  design?: string;
   feature: string;
   acceptance: string[];
   checks: Array<{ name: string; passed: boolean }>;
   files: Array<{ path: string; content: string }>;
 }): string {
   return [
+    ...(opts.design ? [opts.design, '', 'Also say how closely the code follows that design (layout, palette, typography, spacing) and name the biggest differences.', ''] : []),
     `Feature: ${opts.feature}`,
     '',
     'Acceptance criteria:',
@@ -199,3 +216,12 @@ export function phaseCall(opts: {
     effort: 'low',
   };
 }
+
+export const OVERSEER_SYSTEM = [
+  'You are the overseer of an app build. Other models write the code; you check that what was built is what the owner asked for.',
+  'You are given the plan, the owner\'s own instructions, a mechanical check of the code against the chosen design render, and the code.',
+  'Decide whether the feature matches the render (colours, wording, section order, tone), follows the owner\'s instructions and does',
+  'what the plan says. Be specific and brief. If everything is right, reply "OK" and one line why.',
+  'If not, reply with a line "FIX:" followed by a short numbered list of concrete changes (file, what to change, the exact colour or',
+  'wording to use). Never ask for new features, only for what was asked. At most 6 items.',
+].join('\n');

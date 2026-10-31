@@ -4,6 +4,7 @@ import {
   type CostCategory, type Confidence, type Horizon, type LineClass, type Micros, type Range,
 } from '../domain/types.ts';
 import { observedLlmCost, type LlmUsage } from '../gate/llm-cost.ts';
+import type { MeasuredCall, MeasuredPhase } from './measured.ts';
 import { tokenRatesFor, type MeterId, type PriceEntry, type PricingRegistry } from '../registry/pricing.ts';
 
 export type { CalibrationRun, FeatureType } from '../calibration/runs.ts';
@@ -52,6 +53,8 @@ export interface EstimateInput {
   relay?: RelayModels;
   /** Knobs the what-if explorer turns. Each has a stated default. */
   assumptions?: EstimateAssumptions;
+  /** What real runs measured per relay phase; a phase without one falls back to a prior. */
+  measured?: Partial<Record<MeasuredPhase, MeasuredCall>>;
 }
 
 /**
@@ -165,10 +168,12 @@ export const PRIOR_RETRY_RATE = 0.5; // extra attempts per feature, until runs s
  * Relay phases other than build. Spec and architect run once per project, review once per
  * feature. No runs are logged for them yet, so they always use these priors.
  */
+// Each of these phases is one model call (a single pass over a brief), so the fallback is a
+// single call too. Real runs replace it as soon as any are logged (src/estimator/measured.ts).
 const PHASE_LOOP: Record<Exclude<Phase, 'build'>, LoopPrior> = {
-  spec: { turns: 2, baseContext: 3_000, growthPerTurn: 1_000, outputPerTurn: 2_500 },
-  architect: { turns: 3, baseContext: 6_000, growthPerTurn: 2_000, outputPerTurn: 4_000 },
-  review: { turns: 2, baseContext: 5_000, growthPerTurn: 1_500, outputPerTurn: 1_000 },
+  spec: { turns: 1, baseContext: 400, growthPerTurn: 0, outputPerTurn: 600 },
+  architect: { turns: 1, baseContext: 1_000, growthPerTurn: 0, outputPerTurn: 1_500 },
+  review: { turns: 1, baseContext: 2_500, growthPerTurn: 0, outputPerTurn: 500 },
 };
 /** Single-pass phases spread less than a build loop, but a checkpoint can still bounce them. */
 const PHASE_BAND = { low: 0.5, high: 3 };
@@ -362,9 +367,11 @@ const PHASE_LABEL: Record<Phase, string> = {
 /** One relay phase other than build, priced from its prior. Review runs once per feature. */
 function phaseLine(
   phase: Exclude<Phase, 'build'>, model: PriceEntry, features: number, priceIsAssumption: boolean,
-  opts: LoopOptions,
+  opts: LoopOptions, measured?: MeasuredCall,
 ): CostLine {
-  const prior = PHASE_LOOP[phase];
+  const prior: LoopPrior = measured
+    ? { turns: 1, baseContext: measured.inputPerCall, growthPerTurn: 0, outputPerTurn: measured.outputPerCall }
+    : PHASE_LOOP[phase];
   const times = phase === 'review' ? features : 1;
   const once = loopCost(model, prior, opts) * times;
   return {
@@ -373,19 +380,21 @@ function phaseLine(
     category: 'usage_based',
     lineClass: 'empirical',
     unit: 'tokens',
-    quantityAssumption:
-      `Prior: ${times > 1 ? `${times} x ` : ''}${prior.turns}-turn pass from a ${BRIEF_TOKENS / 1000}K brief, ` +
-      `${prior.baseContext / 1000}K context, ${prior.outputPerTurn / 1000}K output per turn` +
-      `${opts.caching === false ? '; no prompt caching' : ''}`,
+    quantityAssumption: (measured
+      ? `Measured: ${measured.calls} real call(s) over ${measured.runs} run(s) averaged ${measured.inputPerCall} tokens in and ${measured.outputPerCall} out`
+      : `Prior: one call of ${prior.baseContext} tokens in and ${prior.outputPerTurn} out`)
+      + `${times > 1 ? `, once per feature (${times})` : ''}${opts.caching === false ? '; no prompt caching' : ''}`,
     range: {
       low: Math.round(once * PHASE_BAND.low),
       expected: once,
       high: Math.round(once * PHASE_BAND.high),
     },
     rateSource: model.id,
-    confidence: 'low',
+    confidence: measured && measured.calls >= 10 ? 'medium' : 'low',
     priceIsAssumption,
-    warnings: ['No logged runs for this phase yet; range is a prior'],
+    warnings: [measured
+      ? `Based on ${measured.calls} real call(s); the range stays wide until more are logged`
+      : 'No logged runs for this phase yet; range is a prior'],
   };
 }
 
@@ -396,24 +405,27 @@ function phaseLine(
  */
 function handoffs(
   features: FeatureRequest[], models: Record<Phase, PriceEntry>, opts: LoopOptions,
+  loops: Record<Exclude<Phase, 'build'>, LoopPrior> = PHASE_LOOP,
 ): HandoffEstimate[] {
   const buildTranscript = features.reduce((t, f) => t + transcriptTokens(PRIOR_LOOP[f.type]), 0);
   const avgBuild: LoopPrior = {
     turns: Math.max(1, Math.round(features.reduce((t, f) => t + PRIOR_LOOP[f.type].turns, 0) / Math.max(1, features.length))),
     baseContext: 8_000, growthPerTurn: 0, outputPerTurn: 0,
   };
-  const legs: Array<{ from: Phase; to: Phase; transcript: number; next: LoopPrior; times: number }> = [
-    { from: 'spec', to: 'architect', transcript: transcriptTokens(PHASE_LOOP.spec), next: PHASE_LOOP.architect, times: 1 },
+  // A brief is what the previous phase wrote, so its size is that phase's output (for the
+  // review, the prompt it is given); not a fixed number.
+  const legs: Array<{ from: Phase; to: Phase; transcript: number; next: LoopPrior; times: number; brief: number }> = [
+    { from: 'spec', to: 'architect', transcript: transcriptTokens(loops.spec), next: loops.architect, times: 1, brief: loops.spec.outputPerTurn },
     // Every feature's build starts from the architect's output.
-    { from: 'architect', to: 'build', transcript: transcriptTokens(PHASE_LOOP.architect), next: avgBuild, times: features.length },
-    { from: 'build', to: 'review', transcript: buildTranscript / Math.max(1, features.length), next: PHASE_LOOP.review, times: features.length },
+    { from: 'architect', to: 'build', transcript: transcriptTokens(loops.architect), next: avgBuild, times: features.length, brief: loops.architect.outputPerTurn },
+    { from: 'build', to: 'review', transcript: buildTranscript / Math.max(1, features.length), next: loops.review, times: features.length, brief: loops.review.baseContext },
   ];
   return legs.map((l) => ({
     from: l.from,
     to: l.to,
     transcriptTokens: Math.round(l.transcript),
-    briefTokens: BRIEF_TOKENS,
-    saved: carryCost(models[l.to], l.next, l.transcript - BRIEF_TOKENS, opts) * l.times,
+    briefTokens: Math.round(l.brief),
+    saved: carryCost(models[l.to], l.next, l.transcript - l.brief, opts) * l.times,
     crossVendor: models[l.from].provider !== models[l.to].provider,
   }));
 }
@@ -519,12 +531,18 @@ export function estimate(
       review: registry.get(input.relay.review),
     };
     const line = (phase: Exclude<Phase, 'build'>) =>
-      phaseLine(phase, models[phase], input.features.length, assumed(models[phase].id), loopOpts);
+      phaseLine(phase, models[phase], input.features.length, assumed(models[phase].id), loopOpts, input.measured?.[phase]);
     const spec = line('spec');
     const architect = line('architect');
     const review = line('review');
     buildLines = [spec, architect, ...featureLines, review];
-    const legs = handoffs(input.features, models, loopOpts);
+    const measuredLoop = (ph: Exclude<Phase, 'build'>): LoopPrior => {
+      const m = input.measured?.[ph];
+      return m ? { turns: 1, baseContext: m.inputPerCall, growthPerTurn: 0, outputPerTurn: m.outputPerCall } : PHASE_LOOP[ph];
+    };
+    const legs = handoffs(input.features, models, loopOpts, {
+      spec: measuredLoop('spec'), architect: measuredLoop('architect'), review: measuredLoop('review'),
+    });
     relay = {
       phases: PHASES.map((phase) => ({
         phase,

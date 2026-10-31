@@ -33,3 +33,7 @@ if (initialized) {
   const result = spawnSync(process.execPath, ['scripts/db-reset.ts'], { stdio: 'inherit' });
   if (result.status !== 0) throw new Error('local database initialization failed');
 }
+
+// A database made before a patch existed is brought up to date without being reset.
+const patch = spawnSync(process.execPath, ['scripts/db-patch.ts'], { stdio: 'inherit' });
+if (patch.status !== 0) throw new Error('applying database patches failed');

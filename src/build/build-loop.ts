@@ -63,6 +63,22 @@ export const BUILDER_SYSTEM_PROMPT = [
   'When the feature is done and the checks pass, reply with a short summary of what you changed and no tool calls.',
 ].join('\n');
 
+/** Offered only when a budget manager is attached: the builder asks for more room, with a reason. */
+export const BUDGET_TOOL: Anthropic.Beta.Messages.BetaTool = {
+  name: 'request_budget',
+  description: 'Ask the budget manager for more spending room for this phase when what the feature genuinely needs is more than you have. Say exactly how much (US dollars) and why. The answer comes back at once: granted, moved from another phase, or declined. Do not ask for routine work.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      amount_usd: { type: 'number', description: 'Extra spending you need, in US dollars (for example 0.02)' },
+      reason: { type: 'string', description: 'Specifically why the extra is needed and what it will be spent on' },
+    },
+    required: ['amount_usd', 'reason'],
+    additionalProperties: false,
+  },
+  strict: true,
+};
+
 const MAX_READ_CHARS = 200_000;
 /** Extra tries for one turn's model call after it fails. */
 const CALL_RETRIES = 2;
@@ -122,6 +138,8 @@ export interface FeatureBuilderDeps {
   runs: RunLog;
   tools: ToolLog;
   systemPrompt?: string;
+  /** Answers the builder's request_budget calls; when absent the tool is not offered. */
+  requestBudget?: (amountUsd: number, reason: string) => Promise<string>;
 }
 
 class InvalidToolInput extends Error {}
@@ -189,7 +207,7 @@ export class FeatureBuilder {
               model: task.model,
               system: this.d.systemPrompt ?? BUILDER_SYSTEM_PROMPT,
               messages: [...messages],
-              tools: TOOLS,
+              tools: this.d.requestBudget ? [...TOOLS, BUDGET_TOOL] : TOOLS,
               maxTokens: task.maxTokens,
               ...(task.effort ? { effort: task.effort } : {}),
               run,
@@ -349,6 +367,12 @@ export class FeatureBuilder {
         case 'run_checks': {
           const checks = await this.d.verifier.runAll(this.d.workspace);
           return { content: summarize(checks), isError: false };
+        }
+        case 'request_budget': {
+          if (!this.d.requestBudget) return { content: 'No budget manager is attached.', isError: true };
+          const amount = input.amount_usd;
+          if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) throw new InvalidToolInput('"amount_usd" must be a positive number');
+          return { content: await this.d.requestBudget(amount, str(input, 'reason')), isError: false };
         }
         default:
           return { content: `Unknown tool: ${use.name}`, isError: true };
