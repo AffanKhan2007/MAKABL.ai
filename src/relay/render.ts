@@ -86,3 +86,35 @@ export function renderDocument(html: string): string {
     ? clean.replace(/<head[^>]*>/i, (m) => `${m}${csp}<meta name="viewport" content="width=device-width, initial-scale=1">`)
     : `<!doctype html><html><head>${csp}<meta name="viewport" content="width=device-width, initial-scale=1"></head><body>${clean}</body></html>`;
 }
+
+// ---- building to a chosen render ---------------------------------------------------------
+
+/** The page the owner chose as the target: the latest "chosen" mark, and that version's HTML. */
+export function chosenDesign(events: Array<{ type: string; payload: Record<string, unknown> }>): { n: number; page: string; html: string } | null {
+  const mark = [...events].reverse().find((e) => e.type === 'relay_render_chosen');
+  if (!mark) return null;
+  const n = Number(mark.payload.n);
+  const render = events.find((e) => e.type === 'relay_render' && Number(e.payload.n) === n);
+  return render ? { n, page: String(render.payload.page), html: String(render.payload.html) } : null;
+}
+
+/** What the builder and the reviewer are told about the chosen render. */
+export function designReference(d: { n: number; page: string; html: string }): string {
+  return [
+    `Design reference: the owner chose version ${d.n} of the "${d.page}" page as the look to build. Match its layout, section order,`,
+    'colour palette, typography, spacing, corner radii and tone, and keep its content and wording where they fit the feature. Rebuild it',
+    'with React and CSS in the project (the reference is plain HTML, not code to paste). Use no external fonts, images or links.',
+    'Reference HTML:',
+    d.html.slice(0, 12_000),
+  ].join('\n');
+}
+
+/** Standing design rules for everything the builder writes, with or without a render. */
+export const DESIGN_GUIDE = [
+  'Design standard: build pages that look professionally designed, not like a default template.',
+  'Define colours, spacing and type sizes once as CSS variables in app/globals.css and reuse them; pick a small palette with real',
+  'contrast (text at least 4.5:1). Use a clear type scale, generous spacing, a visible hierarchy, consistent corner radii, hover and',
+  'focus states, and layouts that work at phone and desktop widths. Write realistic content, never lorem ipsum. Handle empty,',
+  'loading and error states. Use semantic HTML and accessible labels. Subtle motion only (transform and opacity, and respect',
+  'prefers-reduced-motion). No external fonts, images or scripts: use inline SVG, CSS gradients and shapes.',
+].join(' ');

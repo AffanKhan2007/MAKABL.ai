@@ -47,3 +47,28 @@ test('pulls the wireframe section out of an architect brief', () => {
   assert.equal(wireframeOf(brief), '## Wireframe\nHome page\n```\n[nav]\n```');
   assert.equal(wireframeOf('## Files\n- a'), undefined);
 });
+
+import { chosenDesign, designReference, DESIGN_GUIDE } from '../src/relay/render.ts';
+import { reviewPrompt } from '../src/relay/relay.ts';
+
+const ev = (type: string, payload: Record<string, unknown>) => ({ type, payload });
+
+test('the chosen design is the latest mark, resolved to that version, and nothing when none was chosen', () => {
+  const events = [
+    ev('relay_render', { n: 1, page: 'Home', html: '<p>one</p>' }),
+    ev('relay_render', { n: 2, page: 'Home', html: '<p>two</p>' }),
+    ev('relay_render_chosen', { n: 1 }),
+    ev('relay_render_chosen', { n: 2 }),
+  ];
+  assert.deepEqual(chosenDesign(events), { n: 2, page: 'Home', html: '<p>two</p>' });
+  assert.equal(chosenDesign(events.slice(0, 2)), null);
+  assert.equal(chosenDesign([...events.slice(0, 1), ev('relay_render_chosen', { n: 9 })]), null, 'a mark for a missing version is ignored');
+});
+
+test('the builder and reviewer are told to match the render, and every build gets the design standard', () => {
+  const ref = designReference({ n: 2, page: 'Home', html: '<h1>Menu</h1>' });
+  for (const part of ['version 2', '"Home" page', 'layout, section order', 'Reference HTML:', '<h1>Menu</h1>']) assert.ok(ref.includes(part), part);
+  assert.ok(reviewPrompt({ design: ref, feature: 'Home', acceptance: [], checks: [], files: [] }).includes('how closely the code follows that design'));
+  assert.ok(!reviewPrompt({ feature: 'Home', acceptance: [], checks: [], files: [] }).includes('Reference HTML'));
+  for (const rule of ['CSS variables', 'contrast', 'prefers-reduced-motion', 'lorem ipsum', 'empty']) assert.ok(DESIGN_GUIDE.includes(rule), rule);
+});

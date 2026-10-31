@@ -108,3 +108,21 @@ export async function generateRender(opts: {
   });
   return { n };
 }
+
+/** Mark a render as the look the build must match. The latest mark wins. */
+export async function chooseRender(opts: { projectId: string; userId: string; n: number }): Promise<{ error: string } | { n: number }> {
+  const renders = await listRenders(opts.projectId, opts.userId);
+  const render = renders.find((r) => r.n === opts.n);
+  if (!render) return { error: 'That version no longer exists.' };
+  await new PgEventLog(db(), await userScope(opts.userId)).append({
+    projectId: opts.projectId, taskId: null, type: 'relay_render_chosen', payload: { n: render.n, page: render.page },
+  });
+  return { n: render.n };
+}
+
+/** The version the owner chose, if any. */
+export async function chosenN(projectId: string, userId?: string): Promise<number | null> {
+  const events = await new PgEventLog(db(), await userScope(userId)).list(projectId);
+  const mark = [...events].reverse().find((e) => e.type === 'relay_render_chosen');
+  return mark ? Number(mark.payload.n) : null;
+}

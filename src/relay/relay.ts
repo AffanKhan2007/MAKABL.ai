@@ -170,12 +170,15 @@ export function architectPrompt(specBrief: string): string {
 }
 
 export function reviewPrompt(opts: {
+  /** The render the owner chose, if any: the review also checks the build against it. */
+  design?: string;
   feature: string;
   acceptance: string[];
   checks: Array<{ name: string; passed: boolean }>;
   files: Array<{ path: string; content: string }>;
 }): string {
   return [
+    ...(opts.design ? [opts.design, '', 'Also say how closely the code follows that design (layout, palette, typography, spacing) and name the biggest differences.', ''] : []),
     `Feature: ${opts.feature}`,
     '',
     'Acceptance criteria:',

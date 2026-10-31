@@ -1,4 +1,5 @@
 import { startLivePreview, stopLivePreview } from '../build/preview.ts';
+import { chosenDesign, designReference, DESIGN_GUIDE } from '../relay/render.ts';
 
 // Appended to the builder's instructions: it has a budget and a way to ask for more.
 const BUDGET_GUIDE = [
@@ -217,7 +218,12 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
 
   // A resumed build replays its calls from the Gate, and with them the negotiation, so each
   // relay event is recorded once per spec version.
-  const recorded = new Set((await events.list(projectId)).map((e) => e.payload.key).filter(Boolean));
+  const history = await events.list(projectId);
+  const recorded = new Set(history.map((e) => e.payload.key).filter(Boolean));
+  // The render the owner chose as the target look, if any: the builder builds to it and the
+  // reviewer checks the result against it.
+  const chosen = chosenDesign(history);
+  const design = chosen ? designReference(chosen) : undefined;
   const once = async (key: string, type: EventType, taskId: string | null, payload: Record<string, unknown>) => {
     const k = `${v}:${key}`;
     if (recorded.has(k)) return;
@@ -322,30 +328,29 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
       const builder = new FeatureBuilder({
         adapter: caller, workspace, events, tools, runs: mode.runs,
         verifier: new Verifier(mode.checksFor(slug)),
-        systemPrompt: `${mode.systemPrompt}
-
-${BUDGET_GUIDE}`,
+        systemPrompt: [mode.systemPrompt, DESIGN_GUIDE, BUDGET_GUIDE].join('\n\n'),
         // The builder can ask for room itself. The budget manager answers for real: from slack,
         // from a phase that will not need its allowance, or no.
         requestBudget: async (amountUsd, reason) => {
           if (++asks > 3) return 'You have already made three requests for this feature. Work within the room you have.';
           const micros = Math.round(amountUsd * 1_000_000);
           const most = Math.floor(budget.projectCap * 0.25);
-          if (micros > most) return `Too much: one request may not exceed 25% of the project cap (${(most / 1_000_000).toFixed(2)}). Ask for less, or finish within your room.`;
+          if (micros > most) return `Too much: one request may not exceed 25% of the project cap ($${(most / 1_000_000).toFixed(2)}). Ask for less, or finish within your room.`;
           const before = negotiator.snapshot();
           const d = negotiator.ask('build', micros, reason.slice(0, 300));
           await onDecision(d, before);
           const left = negotiator.phases.get('build')!;
-          const room = `${(Math.max(0, left.allowance - left.spent) / 1_000_000).toFixed(4)}`;
-          if (d.outcome === 'granted') return `Granted ${amountUsd.toFixed(4)} from unspent slack. The build phase now has ${room} left.`;
-          if (d.outcome === 'reassigned') return `Granted ${amountUsd.toFixed(4)}, moved from the ${d.from} phase, which will not need it. The build phase now has ${room} left.`;
+          const room = `$${(Math.max(0, left.allowance - left.spent) / 1_000_000).toFixed(4)}`;
+          if (d.outcome === 'granted') return `Granted $${amountUsd.toFixed(4)} from unspent slack. The build phase now has ${room} left.`;
+          if (d.outcome === 'reassigned') return `Granted $${amountUsd.toFixed(4)}, moved from the ${d.from} phase, which will not need it. The build phase now has ${room} left.`;
           return `Declined: no unspent room is left in the project cap. You have ${room}. Finish what you can within it; if a call would not fit, the owner is asked to raise the limit.`;
         },
       });
       const out = await builder.build({
         projectId, taskId, featureType: feature.type, featureName: feature.name,
         spec: `${project.spec.idea}\n\nBuild the "${feature.name}" feature.`
-          + (architectBrief ? `\n\nTechnical brief from the architect (follow it):\n${architectBrief}` : ''),
+          + (architectBrief ? `\n\nTechnical brief from the architect (follow it):\n${architectBrief}` : '')
+          + (design ? `\n\n${design}` : ''),
         acceptance: mode.acceptance(slug, feature.acceptance),
         model: buildModel,
         taskCeiling: budget.projectCap,
@@ -366,7 +371,7 @@ ${BUDGET_GUIDE}`,
           if (content) files.push({ path, content: content.length > 12_000 ? `${content.slice(0, 12_000)}
 [clipped by MAKABL at 12,000 characters; the file continues]` : content });
         }
-        const prompt = reviewPrompt({ feature: feature.name, acceptance: feature.acceptance, checks: out.checks, files });
+        const prompt = reviewPrompt({ ...(design ? { design } : {}), feature: feature.name, acceptance: feature.acceptance, checks: out.checks, files });
         const t = out.run.tokens;
         await once(`handoff:review:${taskId}`, 'relay_handoff', reviewTaskId(taskId), {
           from: 'build', to: 'review', feature: feature.name, fromModel: buildModel, toModel: reviewModel,

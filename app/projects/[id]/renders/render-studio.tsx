@@ -15,6 +15,9 @@ interface Props {
   projectId: string;
   renders: RenderRecord[];
   action: (prev: RenderState, form: FormData) => Promise<RenderState>;
+  /** The version the build is told to match, and how to choose one. */
+  chosen: number | null;
+  choose: (n: number) => Promise<void>;
   pages: string[];
   easy: boolean;
   labels: Record<string, string>;
@@ -23,7 +26,7 @@ interface Props {
 const k = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n));
 const fine = (micros: number) => (micros > 0 && micros < 10_000 ? `$${(micros / 1_000_000).toFixed(4)}` : money(micros));
 
-export function RenderStudio({ renders, action, pages, easy, labels }: Props) {
+export function RenderStudio({ renders, action, chosen, choose, pages, easy, labels }: Props) {
   const [state, formAction, pending] = useActionState<RenderState, FormData>(action, { error: null, done: null });
   const [, startTransition] = useTransition();
   const [device, setDevice] = useState<'desktop' | 'phone'>('desktop');
@@ -51,7 +54,7 @@ export function RenderStudio({ renders, action, pages, easy, labels }: Props) {
           <button type="button" role="tab" aria-selected={device === 'desktop'} onClick={() => setDevice('desktop')}>Desktop</button>
           <button type="button" role="tab" aria-selected={device === 'phone'} onClick={() => setDevice('phone')}>Phone</button>
         </div>
-        {current && <span className="muted small num">v{current.n} · {current.page}</span>}
+        {current && <span className="muted small num">v{current.n} · {current.page}{chosen === current.n ? ' · chosen for the build' : ''}</span>}
       </div>
 
       <div className={`render-stage ${device}${pending ? ' drawing' : ''}`}>
@@ -76,6 +79,17 @@ export function RenderStudio({ renders, action, pages, easy, labels }: Props) {
             ? <span>Drawn by {labels[current.model] ?? current.model}.</span>
             : <span>{labels[current.model] ?? current.model} · {k(current.tokens.input)} in / {k(current.tokens.output)} out · {fine(current.cost)}</span>}
           {current.feedback && <span className="render-asked">You asked: “{current.feedback}”</span>}
+        </div>
+      )}
+
+      {current && (
+        <div className="row">
+          {chosen === current.n
+            ? <span className="badge good">The build will match this version</span>
+            : <button type="button" onClick={() => startTransition(() => choose(current.n))} disabled={pending}>Build to match this one</button>}
+          <span className="muted small">
+            {easy ? 'The AI builds your app to look like this.' : 'The builder and the reviewer get this render as the design target.'}
+          </span>
         </div>
       )}
 

@@ -1,7 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { generateRender, MAX_FEEDBACK } from '../../../../src/server/renders.ts';
+import { chooseRender, generateRender, MAX_FEEDBACK } from '../../../../src/server/renders.ts';
 import { currentUserId } from '../../../../src/server/session.ts';
 
 export interface RenderState { error: string | null; done: number | null }
@@ -15,4 +15,11 @@ export async function requestRenderAction(projectId: string, _prev: RenderState,
   if ('error' in result) return { error: result.error, done: null };
   revalidatePath(`/projects/${projectId}/renders`);
   return { error: null, done: result.n };
+}
+
+/** Choose this version as the look the build must match. */
+export async function chooseRenderAction(projectId: string, n: number): Promise<void> {
+  const result = await chooseRender({ projectId, userId: await currentUserId(), n });
+  if ('error' in result) return;
+  revalidatePath(`/projects/${projectId}/renders`);
 }
