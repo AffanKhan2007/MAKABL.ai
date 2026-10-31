@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 import { DEFAULT_ACCEPTANCE } from '../../../../src/spec/acceptance.ts';
 import { isRunning } from '../../../../src/server/builds.ts';
 import { FEATURE_ROWS } from '../../../../src/server/intake.ts';
-import { BUILD_MODELS } from '../../../../src/server/plan.ts';
+import { BUILD_MODELS, PRESETS } from '../../../../src/server/plan.ts';
 import { getProject } from '../../../../src/server/projects.ts';
 import { IntakeForm } from '../../new/intake-form.tsx';
 import { updateSpecAction } from './actions.ts';
@@ -28,7 +28,7 @@ export default async function EditProject({ params }: { params: Promise<{ id: st
         <p className="notice warn">The build is running. Wait for it to pause or finish before changing the spec.</p>
       ) : (
         <IntakeForm action={updateSpecAction.bind(null, id)} rows={FEATURE_ROWS} models={BUILD_MODELS}
-          defaults={DEFAULT_ACCEPTANCE} initial={{ name: project.name, spec: project.spec }} submitLabel="Save and re-plan" />
+          defaults={DEFAULT_ACCEPTANCE} initial={{ name: project.name, spec: project.spec }} submitLabel="Save and re-plan" presets={PRESETS} />
       )}
     </main>
   );

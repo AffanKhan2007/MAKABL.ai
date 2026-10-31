@@ -1572,3 +1572,123 @@ input:disabled, textarea:disabled, select:disabled {
 /* ---------- live view of the app being built ---------- */
 .live-frame { position: relative; width: 100%; height: min(70vh, 640px); border: 1px solid var(--border-strong); border-radius: var(--radius-sm); overflow: hidden; background: #ffffff; }
 .live-frame iframe { width: 100%; height: 100%; border: 0; display: block; background: #ffffff; }
+
+/* ---------- Pro wizard: one clean screen per step ---------- */
+.pw { max-width: 760px; margin: 0 auto; display: grid; gap: 20px; }
+.pw-stage { position: relative; }
+.pw-panel { display: grid; gap: 22px; padding: 28px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
+.pw-panel[hidden] { display: none; }
+.pw-head { display: grid; gap: 6px; }
+.pw-head h2 { font-size: clamp(24px, 4.4vw, 32px); letter-spacing: -0.02em; margin: 0; }
+.pw-head p { margin: 0; color: var(--muted); font-size: 15px; }
+.pw-field { display: grid; gap: 8px; }
+.pw-field > label { margin: 0; }
+.pw-panel small { color: var(--muted); font-weight: 400; font-size: 13px; }
+
+/* switch */
+.pw-switch { display: flex; align-items: flex-start; gap: 14px; cursor: pointer; margin: 0; font-weight: 560; color: var(--text); position: relative; }
+.pw-switch small { display: block; margin-top: 2px; }
+.pw-switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.pw-switch-track { flex: none; width: 44px; height: 26px; border-radius: 999px; background: var(--surface-3); border: 1px solid var(--border-strong); position: relative; margin-top: 1px;
+  transition: background-color var(--dur-base) var(--ease-standard), border-color var(--dur-base) var(--ease-standard); }
+.pw-switch-thumb { position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: var(--text-2);
+  transition: transform var(--dur-base) var(--ease-enter), background-color var(--dur-base) var(--ease-standard); }
+.pw-switch input:checked + .pw-switch-track { background: var(--accent); border-color: var(--accent); }
+.pw-switch input:checked + .pw-switch-track .pw-switch-thumb { transform: translateX(18px); background: var(--accent-ink); }
+.pw-switch input:focus-visible + .pw-switch-track { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* pills (radio) */
+.pw-pills { display: flex; flex-wrap: wrap; gap: 8px; }
+.pw-pill { margin: 0; position: relative; }
+.pw-pill input { position: absolute; opacity: 0; inset: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+.pw-pill span { display: grid; gap: 1px; justify-items: center; padding: 9px 16px; border: 1px solid var(--border-strong); border-radius: 999px; background: var(--surface-2); color: var(--text-2); font-size: 14px; font-weight: 560;
+  transition: background-color var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard), transform var(--dur-instant) var(--ease-standard); }
+.pw-pill span small { font-size: 11px; line-height: 1.1; }
+.pw-pill:hover span { border-color: var(--accent); }
+.pw-pill input:checked + span { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.pw-pill input:checked + span small { color: var(--accent); }
+.pw-pill input:active + span { transform: scale(0.96); }
+.pw-pill input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* features */
+.pw-features { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.pw-feature { display: grid; gap: 12px; padding: 16px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  transition: border-color var(--dur-fast) var(--ease-standard); }
+.pw-feature:focus-within { border-color: var(--accent); }
+.pw-feature-top { display: flex; align-items: center; gap: 10px; }
+.pw-feature-top input[type=text] { flex: 1; min-width: 0; }
+.pw-feature-num { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); font: 600 13px var(--font-mono); }
+.pw-icon-btn { flex: none; width: 32px; height: 32px; padding: 0; background: transparent; color: var(--muted); border: 1px solid transparent; box-shadow: none; font-size: 20px; line-height: 1; border-radius: 50%; }
+.pw-icon-btn:hover { color: var(--bad); border-color: var(--bad); background: var(--bad-bg); filter: none; transform: none; }
+.pw-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.pw-chip { padding: 6px 12px; border-radius: 999px; background: transparent; color: var(--muted); border: 1px solid var(--border-strong); box-shadow: none; font-size: 13px; font-weight: 560;
+  transition: background-color var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard), transform var(--dur-instant) var(--ease-standard); }
+.pw-chip:hover { color: var(--text); border-color: var(--accent); filter: none; transform: none; }
+.pw-chip:active { transform: scale(0.96); }
+.pw-chip[aria-checked=true] { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.pw-more summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+.pw-more textarea { margin-top: 8px; }
+.pw-add-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+
+/* models */
+.pw-presets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.pw-preset { display: grid; gap: 2px; text-align: left; padding: 12px 14px; background: var(--surface-2); color: var(--text); border: 1px solid var(--border-strong); border-radius: var(--radius-sm); box-shadow: none; white-space: normal; background-image: none; }
+.pw-preset small { line-height: 1.3; }
+.pw-preset:hover { border-color: var(--accent); filter: none; transform: translateY(var(--hover-lift)); }
+.pw-preset:active { transform: scale(0.98); }
+.pw-phases { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.pw-phase { display: grid; gap: 8px; align-content: start; padding: 14px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  transition: opacity var(--dur-base) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard); }
+.pw-phase:focus-within { border-color: var(--accent); }
+.pw-phase.off { opacity: 0.45; }
+.pw-phase-head { display: grid; gap: 2px; }
+.pw-phase-name { font: 600 12px var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); }
+.pw-phase select { font-size: 14px; }
+
+/* review */
+.pw-summary { margin: 0; display: grid; gap: 0; }
+.pw-summary > div { display: grid; grid-template-columns: 110px 1fr; gap: 12px; padding: 12px 0; border-bottom: 1px dashed var(--border); }
+.pw-summary > div:last-child { border-bottom: 0; }
+.pw-summary dt { color: var(--muted); font-size: 14px; }
+.pw-summary dd { margin: 0; color: var(--text); overflow-wrap: anywhere; }
+.pw-chain { display: grid; gap: 4px; }
+.pw-chain b { color: var(--accent); font: 600 12px var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; margin-right: 6px; }
+.pw-alt { margin-top: 24px; max-width: 760px; margin-inline: auto; color: var(--muted); }
+.pw-alt summary { cursor: pointer; font-size: 14px; }
+.pw-alt[open] summary { margin-bottom: 12px; }
+
+@media (max-width: 640px) {
+  .pw-panel { padding: 20px 16px; }
+  .pw-presets, .pw-phases { grid-template-columns: 1fr; }
+  .pw-summary > div { grid-template-columns: 1fr; gap: 2px; }
+}
+
+/* Motion. The signature moment is the step change: the new page slides in from the side the
+   user is heading, and its parts follow one by one. Everything animates transform and opacity.
+   With reduced motion the page fades and nothing travels. */
+@media (prefers-reduced-motion: no-preference) {
+  .pw-stage[data-dir="1"] .pw-panel:not([hidden]) { animation: pw-in-fwd var(--dur-slow) var(--ease-enter) both; }
+  .pw-stage[data-dir="-1"] .pw-panel:not([hidden]) { animation: pw-in-back var(--dur-slow) var(--ease-enter) both; }
+  .pw-panel:not([hidden]) .pw-head,
+  .pw-panel:not([hidden]) .pw-field,
+  .pw-panel:not([hidden]) .pw-switch,
+  .pw-panel:not([hidden]) .pw-summary > div { animation: pw-rise var(--dur-slow) var(--ease-enter) both; }
+  .pw-panel:not([hidden]) .pw-field:nth-of-type(2), .pw-panel:not([hidden]) .pw-summary > div:nth-child(2) { animation-delay: 40ms; }
+  .pw-panel:not([hidden]) .pw-field:nth-of-type(3), .pw-panel:not([hidden]) .pw-summary > div:nth-child(3) { animation-delay: 80ms; }
+  .pw-panel:not([hidden]) .pw-switch, .pw-panel:not([hidden]) .pw-summary > div:nth-child(4) { animation-delay: 120ms; }
+  .pw-feature, .pw-phase, .pw-preset { animation: pw-rise var(--dur-slow) var(--ease-enter) both; animation-delay: calc(var(--i, 0) * 45ms); }
+  .wizard-progress-marker { transition: transform var(--dur-base) var(--ease-enter), background-color var(--dur-base) var(--ease-standard), border-color var(--dur-base) var(--ease-standard); }
+  .wizard-progress-step.current .wizard-progress-marker { transform: scale(1.08); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pw-panel:not([hidden]) { animation: fade-in var(--dur-base) var(--ease-standard) both; }
+}
+@keyframes pw-in-fwd { from { opacity: 0; transform: translateX(28px); } }
+@keyframes pw-in-back { from { opacity: 0; transform: translateX(-28px); } }
+@keyframes pw-rise { from { opacity: 0; transform: translateY(8px); } }
+
+/* Five steps must fit one row, even on a phone. */
+.pw .wizard-progress ol { flex-wrap: nowrap; gap: 4px; }
+.pw .wizard-progress-step { min-width: 0; flex: 1; }
+.pw .wizard-progress-label { font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 520px) { .pw .wizard-step-count { display: none; } }

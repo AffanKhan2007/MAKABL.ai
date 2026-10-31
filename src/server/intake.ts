@@ -2,6 +2,7 @@ import type { FeatureType } from '../calibration/runs.ts';
 import type { Horizon } from '../domain/types.ts';
 import { parseCriteria } from '../spec/acceptance.ts';
 import { BUILD_MODELS, DEFAULT_RELAY, PRESETS, withPreset, type PresetId } from './plan.ts';
+import { RETRY_CHOICES } from './what-if.ts';
 import type { ProjectSpec, SpecFeature } from './projects.ts';
 
 // Validates the intake form (FR-01..FR-03) into a project spec. Shared by creating a
@@ -57,6 +58,21 @@ export function parseIntake(form: FormData): { name: string; spec: ProjectSpec }
     // New projects run as a relay; the what-if explorer on the project page changes it.
     relay: DEFAULT_RELAY,
   };
+  // The Pro form also sends a model per relay phase, the retry rate and prompt caching.
+  if (form.has('pro_options')) {
+    const known = new Set<string>(BUILD_MODELS.map((m) => m.id));
+    if (form.get('relay') === 'on') {
+      const [s, a, r] = ['model_spec', 'model_architect', 'model_review'].map((k) => text(form, k));
+      if (!s || !a || !r || ![s, a, r].every((m) => known.has(m))) return { error: 'Pick a model for every relay phase.' };
+      spec.relay = { spec: s, architect: a, review: r };
+    } else {
+      spec.relay = null;
+    }
+    const retry = Number(text(form, 'retry'));
+    if (!RETRY_CHOICES.includes(retry as typeof RETRY_CHOICES[number])) return { error: 'Pick how many retries to plan for.' };
+    spec.retryRate = retry === 0.5 ? null : retry;
+    spec.caching = form.get('caching') === 'on';
+  }
   // Easy mode picks a quality level instead of models.
   const preset = text(form, 'preset');
   return { name, spec: preset in PRESETS ? withPreset(spec, preset as PresetId) : spec };

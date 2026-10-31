@@ -21,13 +21,21 @@ export default async function NewProject() {
         <h1>New project</h1>
         <p className="sub">A few details now. A clear cost plan before anything is built.</p>
       </div>
-      <PromptIntake action={createFromPromptAction} presets={presets} />
-      <p className="muted small" style={{ margin: '18px 0 6px' }}>Or choose the features yourself:</p>
       {mode === 'easy' ? (
-        <EasyIntake action={createProjectAction} presets={presets} />
+        <>
+          <PromptIntake action={createFromPromptAction} presets={presets} />
+          <p className="muted small" style={{ margin: '18px 0 6px' }}>Or choose the features yourself:</p>
+          <EasyIntake action={createProjectAction} presets={presets} />
+        </>
       ) : (
-        <IntakeForm action={createProjectAction} rows={FEATURE_ROWS} models={BUILD_MODELS}
-          defaults={DEFAULT_ACCEPTANCE} submitLabel="Get the cost plan" />
+        <>
+          <IntakeForm action={createProjectAction} rows={FEATURE_ROWS} models={BUILD_MODELS}
+            defaults={DEFAULT_ACCEPTANCE} submitLabel="Get the cost plan" presets={PRESETS} />
+          <details className="pw-alt">
+            <summary>Start from a single prompt instead</summary>
+            <PromptIntake action={createFromPromptAction} presets={presets} />
+          </details>
+        </>
       )}
     </main>
   );
