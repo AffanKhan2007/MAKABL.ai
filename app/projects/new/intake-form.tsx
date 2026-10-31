@@ -1,9 +1,10 @@
 'use client';
 
-import { useActionState, useState, useTransition, type FormEvent } from 'react';
+import { useActionState, useRef, useState, useTransition, type FormEvent } from 'react';
 import type { ProjectSpec } from '../../../src/server/projects.ts';
 import { FEATURE_TYPES } from '../../format.ts';
 import type { IntakeState } from './actions.ts';
+import { WizardActions, WizardProgress } from './wizard-ui.tsx';
 
 const EXAMPLE: ProjectSpec = {
   idea: 'An inventory tracker for a small shop: the owner signs in, adds items with stock levels, and sees which items are running low.',
@@ -62,6 +63,8 @@ function FeatureRow({ i, initial, defaults }: {
 export function IntakeForm({ action, rows, models, defaults, initial, submitLabel }: Props) {
   const [state, formAction, pending] = useActionState<IntakeState, FormData>(action, { error: null });
   const [, startTransition] = useTransition();
+  const [step, setStep] = useState(1);
+  const formRef = useRef<HTMLFormElement>(null);
   const spec = initial?.spec ?? EXAMPLE;
 
   // Submitted from onSubmit rather than <form action>, which React resets after every
@@ -72,9 +75,24 @@ export function IntakeForm({ action, rows, models, defaults, initial, submitLabe
     startTransition(() => formAction(data));
   };
 
+  const continueStep = () => {
+    const invalid = formRef.current?.querySelector<HTMLElement>(`[data-step="${step}"] :invalid`);
+    if (invalid instanceof HTMLInputElement || invalid instanceof HTMLTextAreaElement || invalid instanceof HTMLSelectElement) {
+      invalid.reportValidity();
+      return;
+    }
+    setStep((current) => Math.min(4, current + 1));
+  };
+
   return (
-    <form onSubmit={onSubmit} className="stack">
-      <section className="card stack">
+    <form ref={formRef} onSubmit={onSubmit} className="stack wizard-form" data-current-step={step}>
+      <WizardProgress step={step} />
+      <section className="card stack wizard-panel" data-wizard-panel data-step="1">
+        <div className="wizard-panel-heading">
+          <span className="eyebrow">Step 1 · Describe</span>
+          <h2>Start with the idea</h2>
+          <p className="muted small">Give your project a name and a short description of what it should do.</p>
+        </div>
         <div>
           <label htmlFor="name">Project name</label>
           <input id="name" name="name" type="text" required maxLength={80} defaultValue={initial?.name ?? 'Inventory tracker'} />
@@ -89,30 +107,49 @@ export function IntakeForm({ action, rows, models, defaults, initial, submitLabe
         </label>
       </section>
 
-      <section className="card">
-        <h2>Features</h2>
-        <p className="muted small" style={{ marginTop: -6 }}>
-          Each feature is built and checked separately, priced on its own line, and judged against its acceptance
-          criteria. Leave rows blank to skip them.
-        </p>
+      <section className="card stack wizard-panel" data-wizard-panel data-step="2">
+        <div className="wizard-panel-heading">
+          <span className="eyebrow">Step 2 · Features</span>
+          <h2>Break it into features</h2>
+          <p className="muted small">Each feature is built and checked separately, priced on its own line, and judged against its acceptance criteria. Leave rows blank to skip them.</p>
+        </div>
         {Array.from({ length: rows }, (_, i) => (
           <FeatureRow key={i} i={i} initial={spec.features[i]} defaults={defaults} />
         ))}
       </section>
 
-      <section className="card grid2">
-        <div>
-          <label htmlFor="visitors">Expected visitors per month <span className="hint">(optional)</span></label>
-          <input id="visitors" name="visitors" type="number" min={0} max={100000000} step={1}
-            defaultValue={spec.monthlyVisitors ?? ''} />
+      <section className="card stack wizard-panel" data-wizard-panel data-step="3">
+        <div className="wizard-panel-heading">
+          <span className="eyebrow">Step 3 · Usage</span>
+          <h2>Set the planning assumptions</h2>
+          <p className="muted small">These details help shape a useful cost range. Visitor numbers are optional.</p>
         </div>
-        <div>
-          <label htmlFor="horizon">Plan covers</label>
-          <select id="horizon" name="horizon" defaultValue={spec.horizon}>
-            <option value="build_only">The build only</option>
-            <option value="first_month">Build + first month of hosting</option>
-            <option value="first_12_months">Build + first 12 months of hosting</option>
-          </select>
+        <div className="grid2">
+          <div>
+            <label htmlFor="visitors">Expected visitors per month <span className="hint">(optional)</span></label>
+            <input id="visitors" name="visitors" type="number" min={0} max={100000000} step={1}
+              defaultValue={spec.monthlyVisitors ?? ''} />
+          </div>
+          <div>
+            <label htmlFor="horizon">Plan covers</label>
+            <select id="horizon" name="horizon" defaultValue={spec.horizon}>
+              <option value="build_only">The build only</option>
+              <option value="first_month">Build + first month of hosting</option>
+              <option value="first_12_months">Build + first 12 months of hosting</option>
+            </select>
+          </div>
+          <div>
+            <label htmlFor="unpriced">Costs you know of but can't price <span className="hint">(comma-separated)</span></label>
+            <input id="unpriced" name="unpriced" type="text" defaultValue={spec.unpricedItems.join(', ')} />
+          </div>
+        </div>
+      </section>
+
+      <section className="card stack wizard-panel" data-wizard-panel data-step="4">
+        <div className="wizard-panel-heading">
+          <span className="eyebrow">Step 4 · Build</span>
+          <h2>Choose a build model</h2>
+          <p className="muted small">You’ll review the cost plan before anything is built or spent.</p>
         </div>
         <div>
           <label htmlFor="model">Build model</label>
@@ -120,14 +157,11 @@ export function IntakeForm({ action, rows, models, defaults, initial, submitLabe
             {models.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
           </select>
         </div>
-        <div>
-          <label htmlFor="unpriced">Costs you know of but can't price <span className="hint">(comma-separated)</span></label>
-          <input id="unpriced" name="unpriced" type="text" defaultValue={spec.unpricedItems.join(', ')} />
-        </div>
       </section>
 
       {state.error && <p className="notice bad" role="alert">{state.error}</p>}
-      <button type="submit" disabled={pending}>{pending ? 'Working out the plan…' : submitLabel}</button>
+      <WizardActions step={step} onPrevious={() => setStep((current) => Math.max(1, current - 1))}
+        onContinue={continueStep} pending={pending} submitLabel={pending ? 'Working out the plan…' : submitLabel} />
     </form>
   );
 }
