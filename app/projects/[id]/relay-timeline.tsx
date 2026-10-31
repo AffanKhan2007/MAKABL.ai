@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import type { Phase } from '../../../src/estimator/estimator.ts';
 import type { ActivityEvent } from '../../../src/events/event-store.ts';
 import { phaseOfTask } from '../../../src/relay/relay.ts';
@@ -101,7 +102,7 @@ export function RelayTimeline({ events, ledger, planned, estimate, label, easy, 
                 hasRun && allow !== undefined ? (
                   <div>
                     <div className="row spread small num"><span className="muted">spent</span><span>{fine(used)} / {fine(allow)}</span></div>
-                    <div className="bar"><span style={{ width: `${Math.min(100, allow ? (used / allow) * 100 : 0)}%` }} /></div>
+                    <div className="bar meter"><span style={{ '--fill': Math.min(1, allow ? used / allow : 0) } as CSSProperties} /></div>
                   </div>
                 ) : (
                   <div className="row spread small num"><span className="muted">estimate</span><span>{fine(estimate[phase] ?? 0)}</span></div>

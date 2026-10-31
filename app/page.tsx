@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import type { CSSProperties } from 'react';
 import { getSessionUser } from '../src/server/session.ts';
 
 // Public landing page: the problem, the promise and the three-part answer, in one screen.
@@ -55,9 +56,9 @@ export default async function Landing() {
             </div>
             <div>
               <div className="row spread small"><span className="muted">Budget cap</span><span className="num">$0.66 of $1.00</span></div>
-              <div className="bar"><span style={{ width: '66%' }} /></div>
+              <div className="bar meter"><span style={{ '--fill': 0.66 } as CSSProperties} /></div>
             </div>
-            <p className="notice warn small" style={{ margin: 0 }}>
+            <p className="notice warn small gate-pause" style={{ margin: 0 }}>
               Paused: the next call could cost up to $0.37 and would cross the $1.00 cap. Approve to continue.
             </p>
           </div>
