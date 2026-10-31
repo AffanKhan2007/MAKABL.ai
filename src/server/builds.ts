@@ -1,3 +1,4 @@
+import { startLivePreview, stopLivePreview } from '../build/preview.ts';
 import { workspaceDir } from './paths.ts';
 import Anthropic from '@anthropic-ai/sdk';
 import {
@@ -21,9 +22,10 @@ import type { ActivityEvent, EventType } from '../events/event-store.ts';
 import { BudgetBlockedError, BudgetGate } from '../gate/budget-gate.ts';
 import { Negotiator, type Decision } from '../relay/negotiator.ts';
 import {
-  approxTokens, ARCHITECT_SYSTEM, architectPrompt, phaseCall, RELAY_TASK, RelayCaller, REVIEW_SYSTEM, reviewPrompt,
-  reviewTaskId, SPEC_SYSTEM, specPrompt, textOf, tokensOf, verdictOf,
+  approxTokens, ARCHITECT_SYSTEM, architectPrompt, phaseCall, phaseOfTask, RELAY_TASK, RelayCaller, REVIEW_SYSTEM,
+  reviewPrompt, reviewTaskId, SPEC_SYSTEM, specPrompt, textOf, tokensOf, verdictOf,
 } from '../relay/relay.ts';
+import { FallbackCaller } from '../relay/fallback.ts';
 import { db } from './db.ts';
 import { liveModeStatus } from './live-mode.ts';
 import { liveBlocker, planFor, registry } from './plan.ts';
@@ -75,7 +77,11 @@ export function startBuild(projectId: string, userId: string): boolean {
       });
       await setProjectState(projectId, 'paused', userId);
     })
-    .finally(() => state.running.delete(projectId));
+    .finally(() => {
+      state.running.delete(projectId);
+      // The live view lasts as long as the build; "Run the app" opens the finished app.
+      stopLivePreview(projectId);
+    });
   return true;
 }
 
@@ -191,6 +197,9 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
     await setProjectState(projectId, 'paused', userId);
     return;
   }
+  // Show the app as it is written. Not awaited: the first compile takes a while, and a live
+  // view that fails to start must never stop the build.
+  void startLivePreview(projectId, workspaceDir(projectId)).catch(() => {});
 
   const done = await verifiedTasks(projectId, userId);
   const plan = await planFor(project.spec);
@@ -218,7 +227,13 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
   let decisionNo = 0;
   const onDecision = (d: Decision) =>
     once(`negotiation:${decisionNo++}`, 'negotiation', null, { ...d, after: negotiator.snapshot() });
-  const caller = new RelayCaller({ adapters, registry, negotiator, onDecision });
+  // A Gemini model whose free quota runs out mid-build hands its calls to the next one.
+  const relayCaller = new RelayCaller({ adapters, registry, negotiator, onDecision });
+  const caller = new FallbackCaller(relayCaller, (s) =>
+    events.append({
+      projectId, taskId: null, type: 'relay_substituted',
+      payload: { phase: phaseOfTask(s.taskId), planned: s.from, used: s.to, reason: s.reason },
+    }).then(() => undefined));
 
   const modelFor = async (phase: Exclude<Phase, 'build'>): Promise<string> => {
     const planned = relay![phase];
@@ -233,7 +248,8 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
     const d = negotiator.finish(phase);
     if (d) await onDecision(d);
     await once(`finished:${phase}`, 'relay_phase_finished', null, {
-      phase, model, spent: negotiator.phases.get(phase)?.spent ?? 0, tokens: caller.tokensFor(phase), ...extra,
+      // The model that last ran the phase, after any quota or overload switch.
+      phase, model: caller.current(model) ?? model, spent: negotiator.phases.get(phase)?.spent ?? 0, tokens: relayCaller.tokensFor(phase), ...extra,
     });
   };
   const pause = () => setProjectState(projectId, 'paused', userId);
@@ -260,11 +276,11 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
         from: 'spec', to: 'architect', fromModel: specModel, toModel: archModel, brief: specBrief.slice(0, 6_000),
         briefTokens: specTokens.output, historyTokens: specTokens.input + specTokens.output,
       });
-      await once('started:architect', 'relay_phase_started', RELAY_TASK.architect, { phase: 'architect', model: archModel });
+      await once('started:architect', 'relay_phase_started', RELAY_TASK.architect, { phase: 'architect', model: caller.current(archModel) ?? archModel });
       const archMsg = await callPhase(caller, phaseCall({
         projectId, taskId: RELAY_TASK.architect, idempotencyKey: `${projectId}:${v}:architect`, description: 'Technical brief',
         model: archModel, system: ARCHITECT_SYSTEM, prompt: architectPrompt(specBrief),
-        maxTokens: 3_000, taskCeiling: budget.projectCap,
+        maxTokens: 4_000, taskCeiling: budget.projectCap,
       }));
       architectBrief = textOf(archMsg);
       const archTokens = tokensOf(archMsg);
@@ -278,7 +294,7 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
       reviewModel = await modelFor('review');
     }
 
-    await once('started:build', 'relay_phase_started', null, { phase: 'build', model: buildModel });
+    await once('started:build', 'relay_phase_started', null, { phase: 'build', model: caller.current(buildModel) ?? buildModel });
     for (const feature of project.spec.features) {
       // Stable per name, type and criteria: unchanged features stay done across spec edits.
       const taskId = taskIdFor(feature);
@@ -311,7 +327,8 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
         const files: Array<{ path: string; content: string }> = [];
         for (const path of writtenFiles(await events.list(projectId), taskId)) {
           const content = await workspace.read(path).catch(() => '');
-          if (content) files.push({ path, content: content.slice(0, 4_000) });
+          if (content) files.push({ path, content: content.length > 12_000 ? `${content.slice(0, 12_000)}
+[clipped by MAKABL at 12,000 characters; the file continues]` : content });
         }
         const prompt = reviewPrompt({ feature: feature.name, acceptance: feature.acceptance, checks: out.checks, files });
         const t = out.run.tokens;
@@ -321,7 +338,7 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
           briefTokens: approxTokens(prompt),
           historyTokens: t.input + t.output + t.cacheRead + t.cacheWrite5m + t.cacheWrite1h,
         });
-        await once('started:review', 'relay_phase_started', null, { phase: 'review', model: reviewModel });
+        await once('started:review', 'relay_phase_started', null, { phase: 'review', model: caller.current(reviewModel) ?? reviewModel });
         try {
           const msg = await callPhase(caller, phaseCall({
             projectId, taskId: reviewTaskId(taskId), idempotencyKey: `${projectId}:${v}:review:${taskId}`,

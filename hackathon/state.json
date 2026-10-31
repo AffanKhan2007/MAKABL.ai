@@ -10,7 +10,7 @@
       "id": 1,
       "text": "SPIKE: one real live build (1 feature, Sonnet, $2 cap) - proves it really builds",
       "tier": "must",
-      "status": "open"
+      "status": "done"
     },
     {
       "id": 2,
@@ -29,19 +29,19 @@
       "id": 4,
       "text": "Demo seed: account + 1 finished project + 1 fresh idea ready to plan",
       "tier": "must",
-      "status": "open"
+      "status": "done"
     },
     {
       "id": 5,
       "text": "Demo script (90s) + fallback screen recording",
       "tier": "must",
-      "status": "open"
+      "status": "done"
     },
     {
       "id": 6,
       "text": "Pitch: problem, demo, how, impact + Q&A sheet",
       "tier": "must",
-      "status": "open"
+      "status": "done"
     },
     {
       "id": 7,
@@ -162,18 +162,36 @@
     },
     {
       "id": 26,
+      "text": "Live preview: embed the generated app's dev server on the project page during the build",
+      "tier": "should",
+      "status": "done"
+    },
+    {
+      "id": 27,
+      "text": "Architect phase also produces a wireframe (matches what mentors were told)",
+      "tier": "should",
+      "status": "done"
+    },
+    {
+      "id": 28,
+      "text": "Lovable connector: create_project/send_message via its MCP (OAuth, credits); see hackathon/builder-platforms.md",
+      "tier": "could",
+      "status": "open"
+    },
+    {
+      "id": 29,
       "text": "Design mockups page: AI wireframe after approval, ask for another version, tokens + cost per version",
       "tier": "must",
       "status": "done"
     },
     {
-      "id": 27,
+      "id": 30,
       "text": "Relay timeline: tokens per phase, negotiation before/after",
       "tier": "must",
       "status": "done"
     },
     {
-      "id": 28,
+      "id": 31,
       "text": "Qwen Cloud vendor (free token allowance) for a live end-to-end build",
       "tier": "should",
       "status": "open"

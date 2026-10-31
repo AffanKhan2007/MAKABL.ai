@@ -20,6 +20,12 @@ if ((Test-Path -LiteralPath $envFile) -and (Select-String -LiteralPath $envFile 
   throw 'MAKABL_ALLOW_UNSANDBOXED_BUILDS=1 is set in .env.local. Remove it (live builds run on the build laptop, not here), then run this again.'
 }
 
+# Keys on a public server let strangers spend your quota (Start build, mockups). Warn, do not block:
+# hackathon/public-link.md says to comment them out while the tunnel is up.
+if ((Test-Path -LiteralPath $envFile) -and (Select-String -LiteralPath $envFile -Pattern '^\s*(GEMINI|ANTHROPIC|OPENAI|OPENROUTER|DASHSCOPE)_API_KEY\s*=\s*\S' -Quiet)) {
+  Write-Host 'WARNING: .env.local still has API keys. Anyone with the link can spend them. Comment them out unless you mean to allow that.' -ForegroundColor Yellow
+}
+
 # 2. cloudflared, installed once with winget if missing.
 if (-not (Get-Command cloudflared -ErrorAction SilentlyContinue)) {
   Write-Host 'Installing cloudflared with winget...'

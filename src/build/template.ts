@@ -53,8 +53,10 @@ const TSCONFIG = {
 export const NEXTJS_TEMPLATE: Readonly<Record<string, string>> = {
   'package.json': `${JSON.stringify(PACKAGE_JSON, null, 2)}\n`,
   'tsconfig.json': `${JSON.stringify(TSCONFIG, null, 2)}\n`,
-  '.gitignore': 'node_modules/\n.next/\nnext-env.d.ts\n*.tsbuildinfo\n.env*\n',
-  'next.config.ts': `import type { NextConfig } from 'next';\n\nconst nextConfig: NextConfig = {};\n\nexport default nextConfig;\n`,
+  '.gitignore': 'node_modules/\n.next/\n.next-dev/\nnext-env.d.ts\n*.tsbuildinfo\n.env*\n',
+  // The live preview's dev server writes to its own folder (NEXT_DIST_DIR), so it never
+  // collides with `next build`.
+  'next.config.ts': `import type { NextConfig } from 'next';\n\nconst nextConfig: NextConfig = {\n  distDir: process.env.NEXT_DIST_DIR ?? '.next',\n};\n\nexport default nextConfig;\n`,
   'app/layout.tsx': `import type { ReactNode } from 'react';
 
 export const metadata = { title: 'App' };

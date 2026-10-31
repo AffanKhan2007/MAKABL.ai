@@ -21,14 +21,21 @@ if (!['localhost', '127.0.0.1', '::1'].includes(target.hostname)) {
 const dbName = decodeURIComponent(target.pathname.slice(1));
 if (!/^[a-z_][a-z0-9_]*$/.test(dbName)) throw new Error(`unexpected database name: ${dbName}`);
 
-// Create the database if it does not exist yet, via the server's maintenance database.
+// Create the database if it does not exist yet, via the server's maintenance database. One
+// made before the UTF-8 rule (a WIN1252 database on Windows) is recreated: this script
+// wipes its data anyway, and keeping it would fail on the first arrow or emoji.
 const adminUrl = new URL(url);
 adminUrl.pathname = '/postgres';
 const admin = new pg.Client({ connectionString: adminUrl.toString() });
 await admin.connect();
 try {
-  const { rowCount } = await admin.query('select 1 from pg_database where datname = $1', [dbName]);
-  if (rowCount === 0) {
+  const { rows } = await admin.query<{ enc: string }>(
+    'select pg_encoding_to_char(encoding) as enc from pg_database where datname = $1', [dbName]);
+  if (rows[0] && rows[0].enc !== 'UTF8') {
+    await admin.query(`drop database ${dbName} with (force)`);
+    console.log(`dropped database ${dbName} (was ${rows[0].enc}, needs UTF8)`);
+  }
+  if (!rows[0] || rows[0].enc !== 'UTF8') {
     await admin.query(`create database ${dbName} ${UTF8}`);
     console.log(`created database ${dbName}`);
   }

@@ -122,10 +122,13 @@ export const ARCHITECT_SYSTEM = [
   'You are the architect phase of a relay of AI models that builds a small web app.',
   'You receive the spec brief written by the previous model. Write a technical brief for the builders,',
   'who build one feature each and will see only your brief and their own feature.',
-  'Use exactly these markdown sections: ## Files (path: purpose), ## Data (tables or types),',
-  '## Conventions (naming, where logic lives, how tests are written), ## Per feature (one line each:',
-  'files it touches), ## Risks.',
-  'Keep it under 450 words. Plan only what the features need.',
+  'Use exactly these markdown sections: ## Wireframe (for each page, a small text sketch of its layout',
+  'in a code block of at most 12 lines, then one line naming its main parts), ## Data (tables or types),',
+  '## Files (path: purpose), ## Conventions (naming, where logic lives, how tests are written),',
+  '## Per feature (one line each: files it touches), ## Risks.',
+  'The builders follow the wireframe, so draw only what the spec asks for: no pages, sign-in or',
+  'features the spec does not mention.',
+  'Keep it under 600 words. Plan only what the features need.',
   '',
   'The project the builders start from:',
   TEMPLATE_GUIDE,
@@ -135,7 +138,8 @@ export const REVIEW_SYSTEM = [
   'You are the review phase of a relay of AI models. One feature has just passed its automated checks.',
   'Read its acceptance criteria, check results and code, and say whether it does what the criteria ask.',
   'First line exactly "VERDICT: APPROVE" or "VERDICT: CONCERNS". Then at most 5 short bullet points.',
-  'Only raise concerns a reader could verify in the code shown.',
+  'Only raise concerns a reader could verify in the code shown. A file ending with a "[clipped by MAKABL ...]" note was cut by the platform, not by the author: do not call it truncated.',
+  'Also check that the feature does only what the criteria and the idea ask: flag extra behaviour nobody requested (for example a login wall) as a concern.',
 ].join('\n');
 
 export function specPrompt(idea: string, features: Array<{ name: string; type: string; acceptance: string[] }>): string {

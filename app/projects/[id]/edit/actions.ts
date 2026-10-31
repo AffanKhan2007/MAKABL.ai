@@ -18,9 +18,12 @@ export async function updateSpecAction(projectId: string, _prev: IntakeState, fo
   if (isRunning(projectId)) return { error: 'Wait for the build to pause or finish before changing the spec.' };
   const parsed = parseIntake(form);
   if ('error' in parsed) return { error: parsed.error };
-  // The intake form does not show the relay or the what-if assumptions; keep them.
-  const { relay, retryRate, caching } = project.spec;
-  parsed.spec = { ...parsed.spec, relay, retryRate, caching };
+  // The Pro form sends the relay and assumptions itself; a form that does not (Easy mode)
+  // keeps the project's.
+  if (!form.has('pro_options')) {
+    const { relay, retryRate, caching } = project.spec;
+    parsed.spec = { ...parsed.spec, relay, retryRate, caching };
+  }
 
   const diff = diffSpecs(project.spec, parsed.spec);
   const nothing = !diff.added.length && !diff.removed.length && !diff.changed.length && !diff.settings.length

@@ -7,10 +7,10 @@ export type EventType =
   | 'budget_overshoot' | 'approval_requested' | 'approval_decided' | 'idempotent_replay'
   | 'task_paused' | 'task_resumed'
   | 'task_started' | 'attempt_started' | 'tool_executed' | 'checks_run'
-  | 'task_verified' | 'task_failed' | 'task_refused' | 'calibration_recorded'
+  | 'task_verified' | 'task_failed' | 'task_refused' | 'calibration_recorded' | 'model_call_failed'
   | 'workspace_ready' | 'build_mode_changed' | 'spec_changed' | 'project_checks_run'
   | 'relay_budget' | 'relay_phase_started' | 'relay_phase_finished' | 'relay_handoff'
-  | 'relay_substituted' | 'relay_review' | 'negotiation' | 'design_render';
+  | 'relay_substituted' | 'relay_review' | 'negotiation' | 'prompt_split' | 'design_render';
 
 export interface ActivityEvent {
   seq: number;

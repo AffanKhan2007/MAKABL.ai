@@ -28,13 +28,14 @@ Honest status, as of 1 Nov 2026:
 | Piece | State |
 |---|---|
 | Cost estimator: per phase, per model, ranges, free vs paid path, what-if explorer | Working. Ranges come from modelled priors until 10+ real runs per feature type are logged; the app says so |
-| Relay execution: spec → architect → build → review with handoff briefs | **Ran live on Gemini (free tier).** Spec and architect briefs, handoffs (32% and 44% fewer tokens than the full history), and negotiator decisions are recorded in the event log |
+| Relay execution: spec → architect → build → review with handoff briefs | **Ran end to end, live, on Gemini's free tier.** All four phases finished, with briefs (36%, 74% and 95% fewer tokens than the full history), negotiator decisions recorded in the event log, and a reviewer's verdict |
+| Live view of the build | The generated app runs in a dev server while the models write it and is embedded on the project page (hot reload does the updating); it stops with the build. Verified on a real generated app; the embedded view itself has not yet been watched during a full build |
 | Token negotiator | Working and tested; live run returned unspent allowance from the spec and architect phases |
 | Budget Gate: reserve, settle, caps, approvals, replay after restart | Working and tested |
 | Gemini adapter | Live-tested. Free-tier quotas are small (20 requests/day for Gemini 3.6 Flash), so a full build may need a paid key |
 | Claude adapter | Implemented and tested with a fake transport; needs an Anthropic API key with credit for a live run |
 | OpenAI / OpenRouter adapter | Implemented and tested with a mocked API; **not yet run live** (no key) |
-| A generated app passing all checks end to end | Not yet on the free tier: one run's checks failed with the smallest model, the next ran out of free quota |
+| A generated app passing all checks end to end | **Yes, once:** a one-page cafe specials site passed its type check, its own tests and the production build on the first attempt, plus the whole-project checks. Cost $0.02 of a $2.00 cap (estimate: $0.11). The model also added a fake sign-in wall nobody asked for, and its reviewer, the same small model, approved it. One run is not a benchmark |
 | Sandbox for generated code | None: it runs on the build machine. Do not run builds on a machine with personal data |
 
 ## Try it
@@ -128,3 +129,7 @@ that models and test runners print).
 5. Email verification and password reset.
 
 Team: Affan, Nishant, Sanjana, Shuja.
+
+## License
+
+MIT, see `LICENSE`.

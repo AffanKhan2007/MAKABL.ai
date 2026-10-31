@@ -45,7 +45,7 @@ interface Props {
 
 const PHASE_TEXT: Record<Phase, { name: string; job: string }> = {
   spec: { name: 'Spec', job: 'turns the idea into a brief' },
-  architect: { name: 'Architect', job: 'plans files and data' },
+  architect: { name: 'Architect', job: 'draws the wireframe and plans data and files' },
   build: { name: 'Build', job: 'writes and checks each feature' },
   review: { name: 'Review', job: 'checks each feature against its criteria' },
 };
