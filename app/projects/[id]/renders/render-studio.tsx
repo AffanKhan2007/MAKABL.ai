@@ -18,6 +18,9 @@ interface Props {
   /** The version the build is told to match, and how to choose one. */
   chosen: number | null;
   choose: (n: number) => Promise<void>;
+  /** Build again to exactly this version; resolves to a message if it could not start. */
+  rebuild: (n: number) => Promise<string | null>;
+  canRebuild: boolean;
   pages: string[];
   easy: boolean;
   labels: Record<string, string>;
@@ -26,13 +29,14 @@ interface Props {
 const k = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n));
 const fine = (micros: number) => (micros > 0 && micros < 10_000 ? `$${(micros / 1_000_000).toFixed(4)}` : money(micros));
 
-export function RenderStudio({ renders, action, chosen, choose, pages, easy, labels }: Props) {
+export function RenderStudio({ projectId, renders, action, chosen, choose, rebuild, canRebuild, pages, easy, labels }: Props) {
   const [state, formAction, pending] = useActionState<RenderState, FormData>(action, { error: null, done: null });
   const [, startTransition] = useTransition();
   const [device, setDevice] = useState<'desktop' | 'phone'>('desktop');
   const [picked, setPicked] = useState<number | null>(null);
   const [page, setPage] = useState(pages[0] ?? 'Home');
   const [feedback, setFeedback] = useState('');
+  const [rebuildNote, setRebuildNote] = useState<string | null>(null);
 
   const current = renders.find((r) => r.n === picked) ?? renders[renders.length - 1];
   // A new render arrives: show it, and clear the box that asked for it.
@@ -87,11 +91,19 @@ export function RenderStudio({ renders, action, chosen, choose, pages, easy, lab
           {chosen === current.n
             ? <span className="badge good">The build will match this version</span>
             : <button type="button" onClick={() => startTransition(() => choose(current.n))} disabled={pending}>Build to match this one</button>}
+          {canRebuild && (
+            <button type="button" className="secondary" disabled={pending}
+              onClick={() => { if (window.confirm('Build again to match this version? It makes new model calls and costs money, inside your limit.')) startTransition(async () => { const n = current.n; const msg = await rebuild(n); setRebuildNote(msg ?? 'Rebuilding to match this version. Watch it on the project page.'); }); }}>
+              {easy ? 'Build it again like this' : 'Rebuild with this version'}
+            </button>
+          )}
           <span className="muted small">
             {easy ? 'The AI builds your app to look like this.' : 'The builder and the reviewer get this render as the design target.'}
           </span>
         </div>
       )}
+
+      {rebuildNote && <p className="notice" role="status" style={{ margin: 0 }}>{rebuildNote} <a href={`/projects/${projectId}`}>Open the project</a></p>}
 
       {renders.length > 1 && (
         <div className="render-versions" role="tablist" aria-label="Versions">

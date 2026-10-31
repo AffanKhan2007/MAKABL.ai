@@ -11,7 +11,7 @@ export type EventType =
   | 'workspace_ready' | 'build_mode_changed' | 'spec_changed' | 'project_checks_run'
   | 'relay_budget' | 'relay_phase_started' | 'relay_phase_finished' | 'relay_handoff'
   | 'relay_substituted' | 'relay_review' | 'relay_render' | 'relay_render_chosen' | 'negotiation' | 'prompt_split'
-  | 'relay_fidelity' | 'relay_checkpoint' | 'owner_note' | 'owner_brief_edit' | 'owner_approved' | 'owner_checkpoint';
+  | 'relay_fidelity' | 'relay_checkpoint' | 'owner_note' | 'owner_brief_edit' | 'owner_approved' | 'owner_checkpoint' | 'rebuild_requested';
 
 export interface ActivityEvent {
   seq: number;

@@ -1,4 +1,5 @@
 import { startLivePreview, stopLivePreview } from '../build/preview.ts';
+import { rebuildRequests, roundOf, withRound } from '../relay/rebuild.ts';
 import { designFor, designReference, designTargets, DESIGN_GUIDE, fidelity } from '../relay/render.ts';
 
 // Appended to the builder's instructions: it has a budget and a way to ask for more.
@@ -230,7 +231,7 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
     const level = String([...all].reverse().find((e) => e.type === 'owner_checkpoint')?.payload.level ?? 'none');
     const approved = new Set(all.filter((e) => e.type === 'owner_approved' && e.payload.v === v).map((e) => String(e.payload.stage)));
     const notes = all.filter((e) => e.type === 'owner_note' && e.payload.v !== undefined).map((e) => ({ feature: e.payload.feature ? String(e.payload.feature) : null, text: String(e.payload.text) }));
-    return { edit: edit ? String(edit.payload.text) : null, level, approved, notes };
+    return { rebuilds: rebuildRequests(all), edit: edit ? String(edit.payload.text) : null, level, approved, notes };
   };
   const stop = async (stage: string, label: string) => {
     await events.append({ projectId, taskId: null, type: 'relay_checkpoint', payload: { v, stage, label } });
@@ -342,7 +343,8 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
       const notes = owner.notes.filter((n) => !n.feature || n.feature === feature.name).map((n) => `- ${n.text}`);
       const design = designOf(feature.name);
       // Stable per name, type and criteria: unchanged features stay done across spec edits.
-      const taskId = taskIdFor(feature);
+      const round = roundOf(owner.rebuilds, feature.name);
+      const taskId = withRound(taskIdFor(feature), round);
       if (done.has(taskId)) continue;
       const slug = featureSlug(feature.name);
       const quoted = paid.lines.find((l) => l.label === `Build: ${feature.name}`)?.range;
@@ -371,6 +373,7 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
       const out = await builder.build({
         projectId, taskId, featureType: feature.type, featureName: feature.name,
         spec: `${project.spec.idea}\n\nBuild the "${feature.name}" feature.`
+          + (round ? '\n\nThis feature was built before and the owner was not happy with it. Rebuild it: replace the existing implementation so that it matches the design reference and the owner\'s instructions below, and keep nothing that conflicts with them.' : '')
           + (architectBrief ? `\n\nTechnical brief from the architect (follow it):\n${architectBrief}` : '')
           + (notes.length ? `\n\nThe owner's own instructions (they override the brief above if they conflict):\n${notes.join('\n')}` : '')
           + (design ? `\n\n${design}` : ''),

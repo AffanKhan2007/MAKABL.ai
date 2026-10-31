@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation';
 import { PgEventLog } from '../../../src/db/pg-event-log.ts';
 import { usd } from '../../../src/domain/types.ts';
 import { gate, isRunning, startBuild } from '../../../src/server/builds.ts';
+import { requestRebuild } from '../../../src/server/rebuild.ts';
 import { db } from '../../../src/server/db.ts';
 import { liveModeStatus } from '../../../src/server/live-mode.ts';
 import { liveBlocker, modelLabel, planFor, PRESETS, registry, withPreset, type PresetId } from '../../../src/server/plan.ts';
@@ -216,6 +217,25 @@ export async function applyPresetAction(projectId: string, form: FormData): Prom
     projectId, taskId: null, type: 'spec_changed',
     payload: { fromVersion: project.specVersion, toVersion: version, added: [], removed: [], changed: [], settings: diff.settings },
   });
+  revalidatePath(`/projects/${projectId}`);
+  back(projectId);
+}
+
+/**
+ * Not happy with what was built? Build the chosen features again from the current renders,
+ * instructions and spec. New model calls, so it costs money again, inside the same caps.
+ */
+export async function rebuildAction(projectId: string, form: FormData): Promise<void> {
+  const project = await getProject(projectId);
+  if (!project) return back(projectId, 'Project not found.');
+  if (isRunning(projectId)) return back(projectId, 'A build is already running.');
+  if (!['verifying', 'paused', 'approved'].includes(project.state)) return back(projectId, 'Build the app once before rebuilding it.');
+  if (form.get('confirm') !== 'yes') return back(projectId, 'Confirm that rebuilding makes new model calls that cost money.');
+  if ((await (await gate()).pendingApprovals(projectId)).length > 0) return back(projectId, 'Decide the pending approval first.');
+  const names = new Set(project.spec.features.map((f) => f.name));
+  const picked = form.getAll('features').map(String).filter((n) => names.has(n));
+  const problem = await requestRebuild({ projectId, userId: await currentUserId(), features: picked });
+  if (problem) return back(projectId, problem);
   revalidatePath(`/projects/${projectId}`);
   back(projectId);
 }

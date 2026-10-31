@@ -9,7 +9,7 @@ import { chosenN, listRenders } from '../../../../src/server/renders.ts';
 import { getProject } from '../../../../src/server/projects.ts';
 import { userScope } from '../../../../src/server/session.ts';
 import { money } from '../../../format.ts';
-import { chooseRenderAction, requestRenderAction } from './actions.ts';
+import { chooseRenderAction, rebuildFromRenderAction, requestRenderAction } from './actions.ts';
 import { RenderStudio } from './render-studio.tsx';
 
 export const dynamic = 'force-dynamic';
@@ -57,8 +57,10 @@ export default async function RendersPage({ params }: { params: Promise<{ id: st
           : 'A model draws each page as a mockup. Ask for changes in words; every version is kept with its cost and tokens.'}
       </p>
 
+      <p className="small" style={{ margin: 0 }}>{easy ? 'Happy with a render? ' : 'Chosen a render? '}<Link href={`/projects/${id}`}>Go to the project page and use Rebuild</Link> to build the app again to match it.</p>
+
       <RenderStudio projectId={id} renders={renders} action={requestRenderAction.bind(null, id)}
-        chosen={chosen} choose={chooseRenderAction.bind(null, id)}
+        chosen={chosen} choose={chooseRenderAction.bind(null, id)} rebuild={rebuildFromRenderAction.bind(null, id)} canRebuild={!['costed', 'draft'].includes(project.state)}
         pages={project.spec.features.map((f) => f.name)} easy={easy}
         labels={Object.fromEntries(renders.map((r) => [r.model, modelLabel(r.model)]))} />
 

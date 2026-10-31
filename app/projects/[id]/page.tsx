@@ -23,7 +23,7 @@ import { userScope } from '../../../src/server/session.ts';
 import { loadReport, type FeatureStatus } from '../../../src/server/verification.ts';
 import { previewOf } from '../../../src/build/preview.ts';
 import {
-  approvePlanAction, decideApprovalAction, deleteProjectAction, setBuildModeAction, startBuildAction,
+  approvePlanAction, decideApprovalAction, deleteProjectAction, rebuildAction, setBuildModeAction, startBuildAction,
   startPreviewAction, stopPreviewAction,
 } from './actions.ts';
 
@@ -446,6 +446,22 @@ export default async function ProjectPage({
           )}
           {project.state === 'paused' && !running && waitingForOwner && (
             <p className="notice" style={{ margin: 0 }}>The build is waiting for you, not stuck. <Link href={`/projects/${id}/steer`}>Review the plan and continue</Link>.</p>
+          )}
+          {anyBuilt && !running && budget && (
+            <details className="card stack" style={{ margin: 0 }}>
+              <summary><strong>{easy ? 'Not happy with it? Build it again' : 'Rebuild from the current renders and instructions'}</strong></summary>
+              <form action={rebuildAction.bind(null, id)} className="stack" style={{ marginTop: 10 }}>
+                <p className="muted small" style={{ margin: 0 }}>
+                  Builds the features again using the renders you chose, your instructions and the current spec. It makes new model calls, so it costs money again, inside your limit.
+                </p>
+                <span className="small">{easy ? 'The whole app is built again.' : 'Tick features to rebuild only those; tick none to rebuild every feature.'}</span>
+                {!easy && project.spec.features.map((f) => (
+                  <label key={f.name} className="check"><input type="checkbox" name="features" value={f.name} /> Only {f.name}</label>
+                ))}
+                <label className="check"><input type="checkbox" name="confirm" value="yes" required /> I approve the new model calls.</label>
+                <button type="submit">Rebuild</button>
+              </form>
+            </details>
           )}
           {approvals.length > 0 && <p className="notice bad" style={{ margin: 0 }}>Paused: decide the approval below to continue.</p>}
           {budget && project.state !== 'verifying' && (

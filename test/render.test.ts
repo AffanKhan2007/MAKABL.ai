@@ -119,3 +119,17 @@ test('feature points add up the feature, its repair, review and overseer costs i
   const pts = featurePoints([{ name: 'A', taskId: 'a' }, { name: 'B', taskId: 'b' }, { name: 'C', taskId: 'c' }], events, cost);
   assert.deepEqual(pts.map((p) => [p.feature, p.cost, p.cumulative, p.score]), [['A', 130, 130, 75], ['B', 50, 180, 100]]);
 });
+
+import { rebuildRequests, roundOf, withRound } from '../src/relay/rebuild.ts';
+
+test('a rebuild request gives the features it names a new round, and others keep theirs', () => {
+  const reqs = rebuildRequests([
+    { type: 'rebuild_requested', payload: { features: ['Home'] } }, { type: 'task_verified', payload: {} },
+    { type: 'rebuild_requested', payload: { features: 'all' } },
+  ]);
+  assert.equal(roundOf(reqs.slice(0, 1), 'Home'), 1);
+  assert.equal(roundOf(reqs.slice(0, 1), 'Menu'), 0);
+  assert.equal(roundOf(reqs, 'Menu'), 2);
+  assert.equal(withRound('t1', 0), 't1');
+  assert.equal(withRound('t1', 2), 't1:r2');
+});

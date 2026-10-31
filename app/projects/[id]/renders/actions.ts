@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { chooseRender, generateRender, MAX_FEEDBACK } from '../../../../src/server/renders.ts';
+import { requestRebuild } from '../../../../src/server/rebuild.ts';
 import { currentUserId } from '../../../../src/server/session.ts';
 
 export interface RenderState { error: string | null; done: number | null }
@@ -22,4 +23,11 @@ export async function chooseRenderAction(projectId: string, n: number): Promise<
   const result = await chooseRender({ projectId, userId: await currentUserId(), n });
   if ('error' in result) return;
   revalidatePath(`/projects/${projectId}/renders`);
+}
+
+/** Make this version the look and build again only the features it governs. Costs a build's worth of model calls. */
+export async function rebuildFromRenderAction(projectId: string, n: number): Promise<string | null> {
+  const problem = await requestRebuild({ projectId, userId: await currentUserId(), render: n });
+  revalidatePath(`/projects/${projectId}`);
+  return problem;
 }

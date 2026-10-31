@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { PgEventLog } from '../../../../src/db/pg-event-log.ts';
+import { rebuildRequests, roundOf, withRound } from '../../../../src/relay/rebuild.ts';
 import { featurePoints, QUALITY_WEIGHTS } from '../../../../src/relay/quality.ts';
 import { gate } from '../../../../src/server/builds.ts';
 import { db } from '../../../../src/server/db.ts';
@@ -20,7 +21,7 @@ export default async function QualityPage({ params }: { params: Promise<{ id: st
   const events = await new PgEventLog(db(), await userScope()).list(id);
   const costByTask = new Map<string, number>();
   for (const e of await (await gate()).ledgerFor(id)) costByTask.set(e.taskId, (costByTask.get(e.taskId) ?? 0) + e.amount);
-  const pts = featurePoints(project.spec.features.map((f) => ({ name: f.name, taskId: taskIdFor(f) })), events, costByTask);
+  const pts = featurePoints(project.spec.features.map((f) => ({ name: f.name, taskId: withRound(taskIdFor(f), roundOf(rebuildRequests(events), f.name)) })), events, costByTask);
 
   const maxCost = Math.max(1, ...pts.map((p) => p.cumulative)) * 1.1;
   const x = (c: number) => L + (c / maxCost) * (W - L - R);
