@@ -13,7 +13,7 @@ work together. If something is unclear about who decides, you decide.
 
 | # | Item | Done when |
 |---|---|---|
-| 13 | Public URL: `cloudflared` quick tunnel to `localhost:3000` | A link opens the app in a private window on a phone |
+| 13 | Public URL: double-click **Public link.bat** (production build on port 3100 + `cloudflared` quick tunnel; link copied to the clipboard). Refuses to run if `.env.local` enables live builds. The link changes on every restart, so start it once at FREEZE and leave it | A link opens the app in a private window on a phone |
 | 17 | Relay execution: spec → architect → build → review, each on its own model, passing a brief | **Done.** Ran live on Gemini; every phase and brief in the timeline |
 | 18 | Token negotiator: per-phase budgets from the cap; a phase asks for more with a reason | **Done.** Grant, reassign, escalate and return, each recorded and shown in the timeline |
 | 19 | Relay timeline UI on the project page | **Done.** Model per phase, spend against allowance, briefs, negotiator, reviews |
