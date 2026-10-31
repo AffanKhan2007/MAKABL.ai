@@ -43,8 +43,7 @@ Say, if asked: no model has asked for budget on its own yet; the reviewer and ov
 
 ## What to say when a screen is not live
 
-- Anything on the **public link** is read-only for builds (live builds are off there). Say:
-  "builds run on our dedicated build machine; here is a recorded run."
+- There is **no public link** (cut on purpose, see Q&A). The judges see the recorded video; a live run happens on the demo laptop only.
 - If the live app fails: play the fallback video and say so. Never pretend.
 
 ## What is real and what is not (say this if asked, in this order)

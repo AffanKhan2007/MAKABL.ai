@@ -78,8 +78,7 @@ on a machine with personal data. A container sandbox is next.
 **What happens to my prompts?** On Gemini's free tier Google may use prompts to improve its
 products, and the app warns about this before a build. Use a paid key for private projects.
 
-**Can strangers use the public link to spend your money?** The public demo runs with live
-builds and API keys turned off.
+**Can strangers use a public link to spend your money?** There is no public link. We cut it on purpose: the app has open sign-up and runs unsandboxed builds with API keys, so exposing the demo laptop would let strangers spend quota and run code on it. The demo is a recorded video plus a local run.
 
 ## About the work
 

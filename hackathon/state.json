@@ -86,7 +86,8 @@
       "id": 13,
       "text": "SPIKE: public URL - tunnel from the demo laptop (cloudflared quick tunnel)",
       "tier": "must",
-      "status": "open"
+      "status": "cut",
+      "why": "public URL cut: a tunnel would expose open sign-up, unsandboxed builds and API keys on the demo laptop; the demo is a recorded video plus a local run"
     },
     {
       "id": 14,

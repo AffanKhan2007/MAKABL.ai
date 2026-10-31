@@ -1,3 +1,5 @@
+> **Cut (1 Nov).** We chose not to open a public link: sign-up is open and builds run unsandboxed with API keys. The demo is a recorded video plus a local run. The notes below are kept only in case that decision is reversed.
+
 # Public link for the judges (#13)
 
 Goal: a `https` link judges can open, served from the demo laptop (L1) through a Cloudflare
