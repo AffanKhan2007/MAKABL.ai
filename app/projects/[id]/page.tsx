@@ -516,7 +516,9 @@ export default async function ProjectPage({
       {approvals.map((a) => (
         <section key={a.id} className="card stack" style={{ borderColor: 'var(--bad)' }}>
           <h2 style={{ margin: 0 }}>Approval needed</h2>
-          <p style={{ margin: 0 }}>{a.reason}</p>
+          <p style={{ margin: 0 }}>{easy
+            ? `The next step could cost up to ${money(a.costRange.high)}, more than your spending limit allows. Nothing was spent on it. Raise the limit to carry on, or stop here.`
+            : a.reason}</p>
           {!easy && <div className="table-wrap">
             <table>
               <tbody>
@@ -531,7 +533,7 @@ export default async function ProjectPage({
           </div>}
           <form action={decideApprovalAction.bind(null, id, a.id)} className="row">
             <div style={{ minWidth: 180 }}>
-              <label htmlFor={`raise-${a.id}`}>Raise both caps by (USD)</label>
+              <label htmlFor={`raise-${a.id}`}>{easy ? 'Raise my limit by (USD)' : 'Raise both caps by (USD)'}</label>
               <input id={`raise-${a.id}`} name="raiseBy" type="number" min="0.01" max="10000" step="0.01"
                 defaultValue={Math.max(1, Math.ceil(a.costRange.high / 1_000_000))} />
             </div>

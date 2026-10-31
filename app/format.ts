@@ -5,6 +5,10 @@ import type { Range } from '../src/domain/types.ts';
 export const money = (micros: number): string =>
   `$${(micros / 1_000_000).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+/** Like money, but a cost under a cent keeps four decimals instead of reading $0.00. */
+export const fineMoney = (micros: number): string =>
+  micros > 0 && micros < 10_000 ? `$${(micros / 1_000_000).toFixed(4)}` : money(micros);
+
 export const range = (r: Range): string => `${money(r.low)} – ${money(r.high)}`;
 
 export const STATE_LABEL: Record<string, { text: string; tone: '' | 'good' | 'warn' | 'bad' }> = {
