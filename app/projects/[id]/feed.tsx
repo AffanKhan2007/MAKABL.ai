@@ -24,9 +24,12 @@ const REFRESH_ON = new Set([
 
 const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
 
+/** "f-low-stock-dashboard-62f5e579" → "low-stock-dashboard": the readable part of a task id. */
+const taskLabel = (id: string) => id.replace(/^f-/, '').replace(/-[0-9a-f]{8}$/, '');
+
 function describe(e: FeedEvent): string {
   const p = e.payload;
-  const task = e.taskId ? `${e.taskId}: ` : '';
+  const task = e.taskId ? `${taskLabel(e.taskId)}: ` : '';
   switch (e.type) {
     case 'task_started': return `${task}started "${p.feature}" (${p.featureType})`;
     case 'attempt_started': return `${task}attempt ${p.attempt}`;
@@ -50,6 +53,18 @@ function describe(e: FeedEvent): string {
     case 'spec_changed': return `spec changed to v${p.toVersion}; plan needs approval again`;
     case 'project_checks_run': return `whole-project checks ${p.passed ? 'passed' : 'failed'}`;
     default: return `${task}${e.type}`;
+  }
+}
+
+/** Colour for a feed line: green for passes, amber for pauses, red for failures. */
+function toneOf(e: FeedEvent): string {
+  switch (e.type) {
+    case 'task_verified': case 'approval_decided': case 'task_resumed': return 't-good';
+    case 'checks_run': case 'project_checks_run': return e.payload.passed ? 't-good' : 't-bad';
+    case 'budget_blocked': case 'task_paused': case 'approval_requested': return 't-warn';
+    case 'task_failed': case 'task_refused': case 'budget_overshoot': return 't-bad';
+    case 'tool_executed': return e.payload.isError ? 't-bad' : 't-accent';
+    default: return '';
   }
 }
 
@@ -81,20 +96,25 @@ export function Feed({ projectId }: { projectId: string }) {
   }, [projectId, router]);
 
   return (
-    <section className="card">
-      <div className="row spread">
-        <h2 style={{ margin: 0 }}>Live feed</h2>
-        <span className={`badge ${connected ? 'good' : ''}`}>{connected ? 'Live' : 'Connecting'}</span>
+    <section className="terminal" aria-label="Live feed">
+      <div className="terminal-head">
+        <div className="row" style={{ gap: 12 }}>
+          <span className="dots" aria-hidden><span /><span /><span /></span>
+          <span className="terminal-title">live feed · event log</span>
+        </div>
+        <span className="row small" style={{ gap: 8, color: connected ? '#4ade80' : '#8a97a8', fontFamily: 'var(--font-mono)' }}>
+          {connected && <span className="live-dot" aria-hidden />}
+          {connected ? 'live' : 'connecting'}
+        </span>
       </div>
-      <p className="muted small">Read from the event log. Newest first.</p>
       {events.length === 0 ? (
-        <p className="muted" style={{ margin: 0 }}>Nothing has happened yet.</p>
+        <div className="feed-empty">$ waiting for the first event…</div>
       ) : (
         <ul className="feed" aria-live="polite">
           {events.map((e) => (
             <li key={e.seq}>
               <span className="time">{new Date(e.at).toLocaleTimeString('en-GB', { hour12: false })}</span>
-              <span>{describe(e)}</span>
+              <span className={toneOf(e)}>{describe(e)}</span>
             </li>
           ))}
         </ul>

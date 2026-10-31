@@ -23,7 +23,7 @@
       "id": 3,
       "text": "Hero first screen: problem + promise in 5 seconds",
       "tier": "must",
-      "status": "open"
+      "status": "done"
     },
     {
       "id": 4,
@@ -54,7 +54,8 @@
       "id": 8,
       "text": "Open the generated app (preview link) after a live build",
       "tier": "should",
-      "status": "open"
+      "status": "cut",
+      "why": "promoted to must as #15"
     },
     {
       "id": 9,
@@ -91,6 +92,18 @@
       "text": "Second laptop as build machine: same repo, own DB, live builds run there",
       "tier": "should",
       "status": "open"
+    },
+    {
+      "id": 15,
+      "text": "Open the app a live build made (run it, link from the project page)",
+      "tier": "must",
+      "status": "open"
+    },
+    {
+      "id": 16,
+      "text": "Redesign: theme, landing page, app shell, project page, sign-in",
+      "tier": "must",
+      "status": "done"
     }
   ]
 }

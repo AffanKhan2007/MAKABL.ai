@@ -34,8 +34,8 @@ export async function deleteProjectAction(projectId: string, form: FormData): Pr
     return back(projectId, 'Type the project name exactly to confirm deletion.');
   }
   await purgeProject(projectId);
-  revalidatePath('/');
-  redirect('/');
+  revalidatePath('/projects');
+  redirect('/projects');
 }
 
 export async function approvePlanAction(projectId: string, form: FormData): Promise<void> {

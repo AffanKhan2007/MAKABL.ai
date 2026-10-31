@@ -10,9 +10,12 @@ export function AuthForm({ mode }: { mode: 'signin' | 'signup' }) {
   const signup = mode === 'signup';
 
   return (
-    <main style={{ maxWidth: 420, margin: '40px auto' }}>
-      <h1>{signup ? 'Create your account' : 'Sign in'}</h1>
-      <p className="sub">{signup ? 'See what an AI-built app will cost before it is built.' : 'Welcome back.'}</p>
+    <main className="auth">
+      <span className="eyebrow">{signup ? 'Get started' : 'Welcome back'}</span>
+      <h1 style={{ marginTop: 10 }}>{signup ? 'Create your account' : 'Sign in to MAKABL'}</h1>
+      <p className="sub">
+        {signup ? 'See what an AI-built app will cost before it is built, then cap it.' : 'Pick up your projects where you left them.'}
+      </p>
       <form action={action} className="card stack">
         <div>
           <label htmlFor="email">Email</label>
@@ -28,11 +31,11 @@ export function AuthForm({ mode }: { mode: 'signin' | 'signup' }) {
             minLength={signup ? 12 : 1} maxLength={256} />
         </div>
         {state.error && <p className="notice bad" role="alert" style={{ margin: 0 }}>{state.error}</p>}
-        <button type="submit" disabled={pending}>
+        <button type="submit" disabled={pending} style={{ width: '100%' }}>
           {pending ? 'Please wait…' : signup ? 'Create account' : 'Sign in'}
         </button>
       </form>
-      <p className="muted small">
+      <p className="muted small" style={{ textAlign: 'center' }}>
         {signup
           ? <>Already have an account? <Link href="/login">Sign in</Link></>
           : <>New here? <Link href="/signup">Create an account</Link></>}

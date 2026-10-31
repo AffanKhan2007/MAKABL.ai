@@ -14,6 +14,16 @@ import {
   approvePlanAction, decideApprovalAction, deleteProjectAction, setBuildModeAction, startBuildAction,
 } from './actions.ts';
 
+const STEPS = ['Plan', 'Approve', 'Build', 'Verified'] as const;
+
+/** Which step the project is on; past the last index means every step is done. */
+function stepIndex(state: string): number {
+  if (state === 'draft' || state === 'scoped' || state === 'planned') return 0;
+  if (state === 'costed') return 1;
+  if (state === 'approved' || state === 'building' || state === 'paused') return 2;
+  return STEPS.length;
+}
+
 const FEATURE_TONE: Record<FeatureStatus, '' | 'good' | 'warn' | 'bad'> = {
   'not started': '', building: 'warn', verified: 'good', failed: 'bad', refused: 'bad',
 };
@@ -145,28 +155,62 @@ export default async function ProjectPage({
 
   return (
     <main>
-      <p className="small" style={{ margin: '0 0 8px' }}><Link href="/">← Projects</Link></p>
-      <div className="row spread" style={{ marginBottom: 4 }}>
-        <h1>{project.name}</h1>
+      <p className="small" style={{ margin: '0 0 10px' }}><Link href="/projects">← Projects</Link></p>
+      <div className="row spread" style={{ marginBottom: 6, alignItems: 'flex-start' }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <h1>{project.name}</h1>
+          <p className="sub" style={{ marginBottom: 0 }}>{project.spec.idea}</p>
+        </div>
         <div className="row">
           {project.buildMode === 'simulated'
-            ? <span className="badge">Simulated build</span>
-            : <span className="badge warn">Live build</span>}
+            ? <span className="badge">Simulated</span>
+            : <span className="badge warn">Live</span>}
           <span className={`badge ${s.tone}`}>{running ? 'Building…' : s.text}</span>
         </div>
       </div>
-      <p className="sub">{project.spec.idea}</p>
-      <div className="row small" style={{ marginTop: -12, marginBottom: 16 }}>
-        <span className="muted">Spec v{project.specVersion}</span>
+      <div className="row small" style={{ margin: '10px 0 18px' }}>
+        <span className="muted num">spec v{project.specVersion}</span>
         {!running && <Link href={`/projects/${id}/edit`}>Change the spec</Link>}
         <a href={`/api/projects/${id}/export`}>Export (zip)</a>
       </div>
 
+      <ol className="stepper" aria-label="Progress">
+        {STEPS.map((label, i) => {
+          const at = stepIndex(project.state);
+          return <li key={label} className={i < at ? 'done' : i === at ? 'current' : ''}>{label}</li>;
+        })}
+      </ol>
+
+      <div className="kpis">
+        <div className="kpi">
+          <div className="kpi-label">Paid path</div>
+          <div className="kpi-value">{money(paid.totals.expected)}</div>
+          <div className="kpi-note num">{range(paid.totals)}</div>
+        </div>
+        <div className="kpi">
+          <div className="kpi-label">Build estimate</div>
+          <div className="kpi-value">{money(buildExpected)}</div>
+          <div className="kpi-note num">up to {money(buildHigh)}</div>
+        </div>
+        <div className="kpi">
+          <div className="kpi-label">Budget cap</div>
+          <div className="kpi-value">{budget ? money(budget.projectCap) : '—'}</div>
+          <div className="kpi-note">{budget ? 'enforced before every call' : 'not set yet'}</div>
+        </div>
+        <div className="kpi">
+          <div className="kpi-label">Spent</div>
+          <div className="kpi-value">{money(spent)}</div>
+          {budget
+            ? <div className="bar" aria-label={`${Math.round((spent / budget.projectCap) * 100)}% of cap`}><span style={{ width: `${Math.min(100, (spent / budget.projectCap) * 100)}%` }} /></div>
+            : <div className="kpi-note">nothing yet</div>}
+        </div>
+      </div>
+
       {error && <p className="notice bad" role="alert">{error}</p>}
       {project.buildMode === 'simulated' ? (
-        <p className="notice warn">
-          Simulated build: a scripted stand-in plays the model. No API calls are made, no real money is spent,
-          and these runs never feed the cost estimates. The costs shown are what the same calls would cost.
+        <p className="notice info small">
+          <strong>Simulated build.</strong> A scripted stand-in plays the model: no API calls, no real money, and
+          these runs never feed the estimates. Costs shown are what the same calls would cost.
         </p>
       ) : (
         <p className="notice bad">

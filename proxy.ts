@@ -4,7 +4,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 // Whether the session is valid is checked on the server by requireUser(), which every
 // page, action and API route calls.
 
-const PUBLIC = new Set(['/login', '/signup']);
+const PUBLIC = new Set(['/', '/login', '/signup']);
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;

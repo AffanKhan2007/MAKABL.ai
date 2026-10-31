@@ -5,6 +5,6 @@ import { AuthForm } from '../auth-form.tsx';
 export const dynamic = 'force-dynamic';
 
 export default async function SignUpPage() {
-  if (await getSessionUser()) redirect('/');
+  if (await getSessionUser()) redirect('/projects');
   return <AuthForm mode="signup" />;
 }

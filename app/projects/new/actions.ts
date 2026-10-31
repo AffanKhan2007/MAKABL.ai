@@ -13,6 +13,6 @@ export async function createProjectAction(_prev: IntakeState, form: FormData): P
   const parsed = parseIntake(form);
   if ('error' in parsed) return { error: parsed.error };
   const id = await createProject(parsed.name, parsed.spec);
-  revalidatePath('/');
+  revalidatePath('/projects');
   redirect(`/projects/${id}`);
 }

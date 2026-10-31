@@ -29,7 +29,7 @@ export async function signUpAction(_prev: AuthFormState, form: FormData): Promis
   if (!('ok' in result)) return result;
   if (!result.ok) return { error: result.error, email };
   await startSession(result);
-  redirect('/');
+  redirect('/projects');
 }
 
 export async function signInAction(_prev: AuthFormState, form: FormData): Promise<AuthFormState> {
@@ -38,7 +38,7 @@ export async function signInAction(_prev: AuthFormState, form: FormData): Promis
   if (!('ok' in result)) return result;
   if (!result.ok) return { error: result.error, email };
   await startSession(result);
-  redirect('/');
+  redirect('/projects');
 }
 
 export async function signOutAction(): Promise<void> {
