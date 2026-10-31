@@ -1,6 +1,7 @@
 import { workspaceDir } from './paths.ts';
 import Anthropic from '@anthropic-ai/sdk';
 import { ClaudeAdapter, sdkTransport, type ClaudeTransport } from '../adapters/claude.ts';
+import { fetchPost, geminiTransport } from '../adapters/gemini.ts';
 import { BUILDER_SYSTEM_PROMPT, FeatureBuilder } from '../build/build-loop.ts';
 import { INSTALL_COMMAND, LIVE_CHECKS, TEMPLATE_GUIDE, writeTemplate } from '../build/template.ts';
 import { Verifier, type CheckSpec } from '../build/verifier.ts';
@@ -95,10 +96,12 @@ function simulatedSetup(): ModeSetup {
   };
 }
 
-function liveSetup(): ModeSetup {
+function liveSetup(provider: string): ModeSetup {
   return {
-    // Reads ANTHROPIC_API_KEY from the server environment; never passed to the workspace.
-    transport: sdkTransport(new Anthropic()),
+    // Reads the provider's key from the server environment; never passed to the workspace.
+    transport: provider === 'google'
+      ? geminiTransport(fetchPost(process.env.GEMINI_API_KEY ?? ''))
+      : sdkTransport(new Anthropic()),
     runs: new PgRunLog(db()),
     checksFor: () => LIVE_CHECKS,
     systemPrompt: `${BUILDER_SYSTEM_PROMPT}\n\n${TEMPLATE_GUIDE}`,
@@ -136,15 +139,16 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
   const scope = await userScope(userId);
   const project = await getProject(projectId, userId);
   if (!project) throw new Error('project not found');
+  const provider = registry.get(project.spec.buildModel).provider;
   if (project.buildMode === 'live') {
-    const live = liveModeStatus();
+    const live = liveModeStatus(process.env, provider);
     if (!live.available) throw new Error(`live builds are not enabled on this server: ${live.missing.join('; ')}`);
   }
 
   const gate = gateFor(scope);
   const budget = await gate.getBudget(projectId);
   const events = new PgEventLog(db(), scope);
-  const mode = project.buildMode === 'live' ? liveSetup() : simulatedSetup();
+  const mode = project.buildMode === 'live' ? liveSetup(provider) : simulatedSetup();
   const adapter = new ClaudeAdapter(gate, registry, mode.transport);
   const workspace = new Workspace(workspaceDir(projectId));
 

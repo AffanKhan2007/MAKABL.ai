@@ -5,7 +5,7 @@ import { MODEL_CATALOG } from '../registry/models.ts';
 import { PricingRegistry, tokenRatesFor } from '../registry/pricing.ts';
 import { seedPrices } from '../registry/seed.ts';
 import { db } from './db.ts';
-import { liveModeStatus } from './live-mode.ts';
+import { LIVE_KEYS, liveModeStatus } from './live-mode.ts';
 import type { ProjectSpec } from './projects.ts';
 
 export const registry = new PricingRegistry(seedPrices);
@@ -60,15 +60,15 @@ export async function planFor(spec: ProjectSpec, overrides: PlanOverrides = {}):
 }
 
 /**
- * Why a vendor cannot run a live phase on this server, in words safe to show. Only the
- * Claude adapter exists so far; OpenAI and Gemini phases run simulated.
+ * Why a vendor cannot run a live phase on this server, in words safe to show. Claude and
+ * Gemini can build live; OpenAI phases run simulated.
  */
 export function liveBlocker(provider: string): string | null {
-  if (provider === 'anthropic') {
-    const live = liveModeStatus();
+  if (provider in LIVE_KEYS) {
+    const live = liveModeStatus(process.env, provider);
     return live.available ? null : live.missing.join('; ');
   }
-  return `No live ${provider === 'openai' ? 'OpenAI' : provider === 'google' ? 'Gemini' : provider} adapter on this server yet`;
+  return `No live ${provider === 'openai' ? 'OpenAI' : provider} adapter on this server yet`;
 }
 
 /** The plan plus its conflicts and shortcomings. */

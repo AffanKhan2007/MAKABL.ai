@@ -85,12 +85,12 @@ export function priceMessage(msg: ClaudeMessage, requested: PriceEntry, registry
     ? iterations.filter(hasTokens)
     : [{ ...(msg.usage as LlmUsage), model: msg.model }];
 
-  const priciest = maxRatePrice(registry);
+  const priciest = maxRatePrice(registry, requested.provider);
   const attempts: PricedUsage['attempts'] = [];
   const unknownModels: string[] = [];
   for (const e of entries) {
     const apiModel = e.model ?? requested.product;
-    const known = registry.find(`anthropic/${apiModel}`);
+    const known = registry.find(`${requested.provider}/${apiModel}`);
     if (!known) unknownModels.push(apiModel);
     const price = known ?? priciest;
     attempts.push({ model: price.id, usage: e, cost: observedLlmCost(price, e) });
@@ -103,9 +103,9 @@ export function priceMessage(msg: ClaudeMessage, requested: PriceEntry, registry
   };
 }
 
-/** The Claude entry with the highest output rate: a ceiling for an unknown Claude model. */
-function maxRatePrice(registry: PricingRegistry): PriceEntry {
-  const llms = registry.llms().filter((p) => p.provider === 'anthropic');
+/** The provider's entry with the highest output rate: a ceiling for an unknown model. */
+function maxRatePrice(registry: PricingRegistry, provider: string): PriceEntry {
+  const llms = registry.llms().filter((p) => p.provider === provider);
   if (!llms.length) throw new Error('registry has no LLM prices');
   return llms.reduce((a, b) =>
     (tokenRatesFor(b, 0).outputPerMTok > tokenRatesFor(a, 0).outputPerMTok ? b : a));
