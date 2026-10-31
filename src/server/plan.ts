@@ -5,7 +5,7 @@ import { MODEL_CATALOG } from '../registry/models.ts';
 import { PricingRegistry, tokenRatesFor } from '../registry/pricing.ts';
 import { seedPrices } from '../registry/seed.ts';
 import { db } from './db.ts';
-import { liveModeStatus } from './live-mode.ts';
+import { LIVE_KEYS, liveModeStatus } from './live-mode.ts';
 import { fetchLivePrices, priceDrift } from '../registry/live-prices.ts';
 import type { ProjectSpec } from './projects.ts';
 
@@ -85,7 +85,7 @@ function annotateWithLive(plan: CostPlan, live: Awaited<ReturnType<typeof fetchL
  * Why a vendor cannot run a live phase on this server, in words safe to show.
  */
 export function liveBlocker(provider: string): string | null {
-  if (provider === 'anthropic' || provider === 'google' || provider === 'openai' || provider === 'qwen') {
+  if (provider in LIVE_KEYS) {
     const live = liveModeStatus(process.env, provider);
     return live.available ? null : live.missing.join('; ');
   }

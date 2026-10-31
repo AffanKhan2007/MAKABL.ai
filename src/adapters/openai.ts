@@ -21,11 +21,37 @@ export interface OpenAiEndpoint {
   /** Registry product → the endpoint's model id. */
   modelId(product: string): string;
   label: string;
-  /** Field that carries the output limit; OpenAI's newer name unless the endpoint wants another. */
-  maxTokensField?: 'max_completion_tokens' | 'max_tokens';
+  /** What the endpoint calls the output limit; OpenAI's newer name by default. */
+  maxTokensParam?: 'max_tokens' | 'max_completion_tokens';
   /** Extra request fields this endpoint needs on every call. */
   extraBody?: Record<string, unknown>;
 }
+
+/** Groq: OpenAI-compatible, free tier with daily request limits. */
+// Groq's model ids include slashes (e.g. openai/gpt-oss-120b) that are not safe in
+// registry ids, so we map from the registry product slug to the real Groq model id.
+const GROQ_MODELS: Record<string, string> = {
+  'gpt-oss-120b': 'openai/gpt-oss-120b',
+};
+export const groq = (apiKey: string): OpenAiEndpoint => ({
+  url: 'https://api.groq.com/openai/v1/chat/completions', apiKey,
+  modelId: (p) => GROQ_MODELS[p] ?? p, label: 'Groq',
+});
+
+/** Mistral's La Plateforme: free "Experiment" tier; takes max_tokens. */
+export const mistral = (apiKey: string): OpenAiEndpoint => ({
+  url: 'https://api.mistral.ai/v1/chat/completions', apiKey, modelId: (p) => p, label: 'Mistral', maxTokensParam: 'max_tokens',
+});
+
+/** OpenRouter's free models, which have ":free" ids. Registry products → OpenRouter ids. */
+const OPENROUTER_FREE: Record<string, string> = {
+  'nemotron-ultra-free': 'nvidia/nemotron-3-ultra-550b-a55b:free',
+  'gemma-4-31b-free': 'google/gemma-4-31b-it:free',
+};
+export const openRouterFree = (apiKey: string): OpenAiEndpoint => ({
+  url: 'https://openrouter.ai/api/v1/chat/completions', apiKey, label: 'OpenRouter', maxTokensParam: 'max_tokens',
+  modelId: (p) => OPENROUTER_FREE[p] ?? p,
+});
 
 export const openAiDirect = (apiKey: string): OpenAiEndpoint => ({
   url: 'https://api.openai.com/v1/chat/completions', apiKey, modelId: (p) => p, label: 'OpenAI',
@@ -44,7 +70,7 @@ export const openRouter = (apiKey: string): OpenAiEndpoint => ({
 export const qwenCloud = (apiKey: string): OpenAiEndpoint => ({
   url: 'https://ap-southeast-1.maas.qwencloudapi.com/compatible-mode/v1/chat/completions',
   apiKey, modelId: (p) => p, label: 'Qwen Cloud',
-  maxTokensField: 'max_tokens', extraBody: { enable_thinking: false },
+  maxTokensParam: 'max_tokens', extraBody: { enable_thinking: false },
 });
 
 type Block = Record<string, any>;
@@ -124,7 +150,7 @@ export function openAiTransport(endpoint: OpenAiEndpoint): ClaudeTransport {
         model: endpoint.modelId(params.model),
         messages: chatMessages(params),
         ...(tools ? { tools } : {}),
-        [endpoint.maxTokensField ?? 'max_completion_tokens']: params.max_tokens,
+        [endpoint.maxTokensParam ?? 'max_completion_tokens']: params.max_tokens,
         ...endpoint.extraBody,
       });
       const choice = result.choices?.[0];
@@ -151,6 +177,15 @@ export function openAiTransport(endpoint: OpenAiEndpoint): ClaudeTransport {
       } as unknown as ClaudeMessage;
     },
   };
+}
+
+/** The endpoint for one of the free OpenAI-compatible providers, if its key is set. */
+export function freeEndpointFor(provider: string, env: Readonly<Record<string, string | undefined>>): OpenAiEndpoint | null {
+  if (provider === 'groq' && env.GROQ_API_KEY) return groq(env.GROQ_API_KEY);
+  if (provider === 'mistral' && env.MISTRAL_API_KEY) return mistral(env.MISTRAL_API_KEY);
+  if (provider === 'openrouter' && env.OPENROUTER_API_KEY) return openRouterFree(env.OPENROUTER_API_KEY);
+  if (provider === 'qwen' && env.DASHSCOPE_API_KEY) return qwenCloud(env.DASHSCOPE_API_KEY);
+  return null;
 }
 
 /** The endpoint for this server: OpenAI if its key is set, else OpenRouter, else none. */

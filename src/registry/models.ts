@@ -8,7 +8,7 @@ import type { PriceEntry, TokenRates } from './pricing.ts';
 // and gpt-3.5-turbo / gpt-4-0613, whose 16K / 8K context windows are smaller than one build
 // loop needs.
 
-export type Vendor = 'Anthropic' | 'OpenAI' | 'Google' | 'Qwen';
+export type Vendor = 'Anthropic' | 'OpenAI' | 'Google' | 'Groq' | 'OpenRouter' | 'Mistral' | 'Qwen';
 
 export interface ModelInfo {
   id: string;
@@ -24,9 +24,14 @@ const SOURCES: Record<Vendor, string> = {
   Anthropic: 'https://platform.claude.com/docs/en/about-claude/pricing',
   OpenAI: 'https://developers.openai.com/api/docs/pricing',
   Google: 'https://ai.google.dev/gemini-api/docs/pricing',
+  Groq: 'https://groq.com/pricing',
+  OpenRouter: 'https://openrouter.ai/models?max_price=0',
+  Mistral: 'https://mistral.ai/pricing#api-pricing',
   Qwen: 'https://www.alibabacloud.com/help/en/model-studio/model-pricing',
 };
-const PROVIDER: Record<Vendor, string> = { Anthropic: 'anthropic', OpenAI: 'openai', Google: 'google', Qwen: 'qwen' };
+const PROVIDER: Record<Vendor, string> = {
+  Anthropic: 'anthropic', OpenAI: 'openai', Google: 'google', Groq: 'groq', OpenRouter: 'openrouter', Mistral: 'mistral', Qwen: 'qwen',
+};
 
 interface Row extends Omit<ModelInfo, 'id'> {
   product: string;
@@ -52,6 +57,10 @@ function tokenRates(r: Row['rates'], writes?: [number, number]): TokenRates {
 const longTier = (overTokens: number, r: Row['rates']) => ({ overTokens, rates: tokenRates(r) });
 const doubles = (from: string, note: string, r: Row['rates']) => ({ priceChanges: [{ from, note, rates: tokenRates(r) }] });
 const FREE_TIER = { freeTier: { note: 'Free tier available; its rate limits are not on the pricing page' } };
+const UNVERIFIED_FREE = {
+  confidence: 'unverified' as const,
+  freeTier: { note: 'Free tier with a daily request limit; paid rate not yet checked' },
+};
 // OpenAI flagship models list separate prices above 272K input tokens.
 const openaiLong = (r: Row['rates']) => ({ longPrompt: longTier(272_000, r) });
 
@@ -140,6 +149,15 @@ const ROWS: Row[] = [
   },
   { vendor: 'Google', label: 'Gemini 2.5 Flash', product: 'gemini-2.5-flash', rates: [0.3, 2.5, 0.03], lifecycle: 'legacy', extra: FREE_TIER },
   { vendor: 'Google', label: 'Gemini 2.5 Flash-Lite', product: 'gemini-2.5-flash-lite', rates: [0.1, 0.4, 0.01], lifecycle: 'legacy', extra: FREE_TIER },
+
+  // Free-tier providers added for the hackathon (OpenAI-compatible APIs). Paid rates are not
+  // yet checked against the pricing pages, so they are marked unverified and show as
+  // assumptions; on the free tiers the calls cost nothing.
+  { vendor: 'Groq', label: 'GPT-OSS 120B (Groq)', product: 'gpt-oss-120b', rates: [0, 0, null], extra: UNVERIFIED_FREE },
+  { vendor: 'OpenRouter', label: 'Nemotron 550B (OpenRouter, free)', product: 'nemotron-ultra-free', rates: [0, 0, null], extra: UNVERIFIED_FREE },
+  { vendor: 'OpenRouter', label: 'Gemma 4 31B (OpenRouter, free)', product: 'gemma-4-31b-free', rates: [0, 0, null], extra: UNVERIFIED_FREE },
+  { vendor: 'Mistral', label: 'Mistral Small', product: 'mistral-small-latest', rates: [0.1, 0.3, null], extra: UNVERIFIED_FREE },
+  { vendor: 'Mistral', label: 'Devstral Small', product: 'devstral-small-latest', rates: [0.1, 0.3, null], extra: UNVERIFIED_FREE },
 
   // Qwen Cloud (Alibaba Model Studio, Singapore region). Price from third-party listings that
   // agree on $0.15 / $0.47; the official page was not reachable on 2026-10-31, so confidence is

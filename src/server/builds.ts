@@ -16,7 +16,7 @@ import {
   type ClaudeCall, type ClaudeMessage, type ClaudeTransport, type ModelCaller,
 } from '../adapters/claude.ts';
 import { fetchPost, geminiTransport } from '../adapters/gemini.ts';
-import { openAiEndpointFrom, openAiTransport, qwenEndpointFrom } from '../adapters/openai.ts';
+import { freeEndpointFor, openAiEndpointFrom, openAiTransport } from '../adapters/openai.ts';
 import { BUILDER_SYSTEM_PROMPT, FeatureBuilder } from '../build/build-loop.ts';
 import { INSTALL_COMMAND, LIVE_CHECKS, TEMPLATE_GUIDE, writeTemplate } from '../build/template.ts';
 import { Verifier, type CheckSpec } from '../build/verifier.ts';
@@ -37,7 +37,7 @@ import {
 } from '../relay/relay.ts';
 import { FallbackCaller } from '../relay/fallback.ts';
 import { db } from './db.ts';
-import { liveModeStatus } from './live-mode.ts';
+import { LIVE_KEYS, liveModeStatus } from './live-mode.ts';
 import { liveBlocker, planFor, registry } from './plan.ts';
 import { getProject, setProjectState, verifiedTasks, type Project } from './projects.ts';
 import { userScope } from './session.ts';
@@ -112,8 +112,8 @@ export function transportFor(provider: string): ClaudeTransport {
     ? geminiTransport(fetchPost(process.env.GEMINI_API_KEY ?? ''))
     : provider === 'openai'
       ? openAiTransport(openAiEndpointFrom(process.env)!)
-      : provider === 'qwen'
-        ? openAiTransport(qwenEndpointFrom(process.env)!)
+      : freeEndpointFor(provider, process.env)
+        ? openAiTransport(freeEndpointFor(provider, process.env)!)
         : sdkTransport(new Anthropic());
 }
 
@@ -179,7 +179,8 @@ function writtenFiles(evts: ActivityEvent[], taskId: string): string[] {
 /** One Gate-protected adapter per vendor whose key is configured on this server. */
 export function buildAdapters(gate: BudgetGate): Partial<Record<string, ClaudeAdapter>> {
   const adapters: Partial<Record<string, ClaudeAdapter>> = {};
-  for (const p of ['anthropic', 'google', 'openai']) {
+  // Every provider with a known key variable (LIVE_KEYS), so a new vendor is never skipped.
+  for (const p of Object.keys(LIVE_KEYS)) {
     if (liveModeStatus(process.env, p).available) adapters[p] = new ClaudeAdapter(gate, registry, liveSetup(p).transport, p);
   }
   return adapters;
