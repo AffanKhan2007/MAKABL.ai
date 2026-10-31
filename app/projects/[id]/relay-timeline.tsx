@@ -17,7 +17,7 @@ const NAME: Record<Phase, { pro: string; easy: string }> = {
   build: { pro: 'Build', easy: 'Building it' },
   review: { pro: 'Review', easy: 'Double-checking' },
 };
-const OUTCOME_TONE: Record<string, string> = { granted: 'good', reassigned: 'accent', escalated: 'warn', returned: '' };
+const OUTCOME_TONE: Record<string, string> = { granted: 'good', reassigned: 'accent', escalated: 'warn', declined: 'bad', returned: '' };
 
 interface Props {
   events: ActivityEvent[];
@@ -150,7 +150,8 @@ export function RelayTimeline({ events, ledger, planned, estimate, label, easy, 
                     <span className="small">
                       <strong>{NAME[d.phase as Phase].pro}</strong> {fine(Number(d.amount))}
                       {d.outcome === 'reassigned' && d.from ? ` from ${NAME[d.from as Phase].pro}` : ''}
-                      {d.outcome === 'escalated' ? ' (the Budget Gate decides)' : ''}
+                      {d.outcome === 'escalated' ? ' (the Budget Gate asks you)' : ''}
+                      {d.by === 'model' ? ' · asked by the model' : ''}
                       <span className="muted"> · {String(d.reason)}</span>
                     </span>
                   </li>

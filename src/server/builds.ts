@@ -1,4 +1,12 @@
 import { startLivePreview, stopLivePreview } from '../build/preview.ts';
+
+// Appended to the builder's instructions: it has a budget and a way to ask for more.
+const BUDGET_GUIDE = [
+  'You work under a spending budget set by the owner. If what this feature genuinely needs is more',
+  'than the room you have, call request_budget with the extra amount in US dollars and a specific',
+  'reason; the answer is immediate. Ask rarely and for real needs. A declined request means finish',
+  'within what you have.',
+].join(' ');
 import { workspaceDir } from './paths.ts';
 import Anthropic from '@anthropic-ai/sdk';
 import {
@@ -223,9 +231,18 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
     : [{ phase: 'build' as Phase, expected: buildLines.reduce((t, l) => t + l.range!.expected, 0) }];
   const negotiator = Negotiator.fromPlan(budget.projectCap, expected);
   await once('budget', 'relay_budget', null, { cap: budget.projectCap, ...negotiator.snapshot() });
+  // A resumed build does not re-run the tool calls it already made, so the room the builder asked
+  // for and was given is re-applied here from the record, in order.
+  let askNo = 0;
+  for (const e of await events.list(projectId)) {
+    const p = e.payload as Record<string, unknown>;
+    if (e.type !== 'negotiation' || p.by !== 'model' || !String(p.key).startsWith(`${v}:ask:`)) continue;
+    askNo++;
+    if (p.outcome === 'granted' || p.outcome === 'reassigned') negotiator.ask(p.phase as Phase, Number(p.amount), String(p.reason));
+  }
   let decisionNo = 0;
   const onDecision = (d: Decision, before: ReturnType<Negotiator['snapshot']>) =>
-    once(`negotiation:${decisionNo++}`, 'negotiation', null, { ...d, before, after: negotiator.snapshot() });
+    once(d.by === 'model' ? `ask:${askNo++}` : `negotiation:${decisionNo++}`, 'negotiation', null, { ...d, before, after: negotiator.snapshot() });
   // A Gemini model whose free quota runs out mid-build hands its calls to the next one.
   const relayCaller = new RelayCaller({ adapters, registry, negotiator, onDecision });
   const caller = new FallbackCaller(relayCaller, (s) =>
@@ -301,10 +318,29 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
       if (done.has(taskId)) continue;
       const slug = featureSlug(feature.name);
       const quoted = paid.lines.find((l) => l.label === `Build: ${feature.name}`)?.range;
+      let asks = 0;
       const builder = new FeatureBuilder({
         adapter: caller, workspace, events, tools, runs: mode.runs,
         verifier: new Verifier(mode.checksFor(slug)),
-        systemPrompt: mode.systemPrompt,
+        systemPrompt: `${mode.systemPrompt}
+
+${BUDGET_GUIDE}`,
+        // The builder can ask for room itself. The budget manager answers for real: from slack,
+        // from a phase that will not need its allowance, or no.
+        requestBudget: async (amountUsd, reason) => {
+          if (++asks > 3) return 'You have already made three requests for this feature. Work within the room you have.';
+          const micros = Math.round(amountUsd * 1_000_000);
+          const most = Math.floor(budget.projectCap * 0.25);
+          if (micros > most) return `Too much: one request may not exceed 25% of the project cap (${(most / 1_000_000).toFixed(2)}). Ask for less, or finish within your room.`;
+          const before = negotiator.snapshot();
+          const d = negotiator.ask('build', micros, reason.slice(0, 300));
+          await onDecision(d, before);
+          const left = negotiator.phases.get('build')!;
+          const room = `${(Math.max(0, left.allowance - left.spent) / 1_000_000).toFixed(4)}`;
+          if (d.outcome === 'granted') return `Granted ${amountUsd.toFixed(4)} from unspent slack. The build phase now has ${room} left.`;
+          if (d.outcome === 'reassigned') return `Granted ${amountUsd.toFixed(4)}, moved from the ${d.from} phase, which will not need it. The build phase now has ${room} left.`;
+          return `Declined: no unspent room is left in the project cap. You have ${room}. Finish what you can within it; if a call would not fit, the owner is asked to raise the limit.`;
+        },
       });
       const out = await builder.build({
         projectId, taskId, featureType: feature.type, featureName: feature.name,

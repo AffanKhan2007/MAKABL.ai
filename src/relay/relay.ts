@@ -53,6 +53,8 @@ export class RelayCaller implements ModelCaller {
   private readonly negotiator: Negotiator;
   private readonly onDecision: (d: Decision, before: ReturnType<Negotiator['snapshot']>) => Promise<void>;
   private readonly used = new Map<Phase, { input: number; output: number; calls: number }>();
+  /** What each Gate task has spent here, to work out how much of its phase's allowance is left for it. */
+  private readonly taskSpent = new Map<string, number>();
 
   constructor(opts: {
     adapters: Partial<Record<string, ClaudeAdapter>>;
@@ -85,16 +87,28 @@ export class RelayCaller implements ModelCaller {
     );
     if (decision) await this.onDecision(decision, before);
 
+    // Enforcement: the Gate's ceiling for this task is what the phase may still spend on it
+    // (its allowance, less what the phase's other tasks have used). If the negotiator could not
+    // find room, the allowance is unchanged and the Gate blocks the call and asks the user.
+    const after = this.negotiator.phases.get(phase);
+    const taskSpent = this.taskSpent.get(c.taskId) ?? 0;
+    const ceiling = after ? Math.max(0, after.allowance - (after.spent - taskSpent)) : c.taskCeiling;
+
     let msg: ClaudeMessage;
     try {
-      msg = await adapter.call(c);
+      msg = await adapter.call({ ...c, taskCeiling: Math.min(c.taskCeiling, ceiling) });
     } catch (err) {
       // The Gate books a failed call at its worst case unless the provider refused it
       // outright; the phase carries the same so its spend matches the ledger.
-      if (!(err instanceof NotChargedError) && !(err instanceof BudgetBlockedError)) this.negotiator.spend(phase, worstCase);
+      if (!(err instanceof NotChargedError) && !(err instanceof BudgetBlockedError)) {
+        this.negotiator.spend(phase, worstCase);
+        this.taskSpent.set(c.taskId, taskSpent + worstCase);
+      }
       throw err;
     }
-    this.negotiator.spend(phase, priceMessage(msg, price, this.registry, price.provider).cost);
+    const cost = priceMessage(msg, price, this.registry, price.provider).cost;
+    this.negotiator.spend(phase, cost);
+    this.taskSpent.set(c.taskId, taskSpent + cost);
     const t = tokensOf(msg);
     const u = this.used.get(phase) ?? { input: 0, output: 0, calls: 0 };
     this.used.set(phase, { input: u.input + t.input, output: u.output + t.output, calls: u.calls + 1 });

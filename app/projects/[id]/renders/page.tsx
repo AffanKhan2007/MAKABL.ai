@@ -96,7 +96,7 @@ export default async function RendersPage({ params }: { params: Promise<{ id: st
                       const phases = [...new Set([String(p.phase), ...(p.from ? [String(p.from)] : [])])];
                       return (
                         <tr key={e.seq}>
-                          <td><span className={`badge ${p.outcome === 'escalated' ? 'warn' : p.outcome === 'returned' ? '' : 'accent'}`}>{String(p.outcome)}</span>{' '}
+                          <td><span className={`badge ${p.outcome === 'escalated' ? 'warn' : p.outcome === 'declined' ? 'bad' : p.outcome === 'returned' ? '' : 'accent'}`}>{String(p.outcome)}</span>{p.by === 'model' ? <span className="muted small"> asked by the model</span> : null}{' '}
                             <strong>{PHASE_NAME[String(p.phase)] ?? String(p.phase)}</strong> {fine(Number(p.amount))}
                             {p.from ? <span className="muted"> from {PHASE_NAME[String(p.from)]}</span> : null}</td>
                           <td className="small muted">{String(p.reason)}</td>

@@ -158,3 +158,39 @@ test('a call the provider refused is released, not booked, and a quota error is 
   assert.equal(await gate.spent(P), 0);
   assert.equal((await gate.ledgerFor(P)).length, 0);
 });
+
+test('asking for room: granted from slack, moved from a phase that will not need it, or declined', () => {
+  const n = Negotiator.fromPlan(usd(1), [
+    { phase: 'build', expected: usd(1) }, { phase: 'review', expected: usd(1) },
+  ]);
+  n.phases.get('review')!.expected = usd(0.1);
+
+  const slack = n.ask('build', usd(0.1), 'three migrations');
+  assert.equal(slack.outcome, 'granted');
+  assert.equal(slack.by, 'model');
+  assert.equal(n.phases.get('build')!.allowance, usd(0.5));
+
+  const moved = n.ask('build', usd(0.2), 'larger schema');
+  assert.equal(moved.outcome, 'reassigned');
+  assert.equal(moved.from, 'review');
+
+  const declined = n.ask('build', usd(0.9), 'everything');
+  assert.equal(declined.outcome, 'declined');
+  assert.equal(n.phases.get('build')!.allowance, usd(0.7), 'a declined request changes nothing');
+});
+
+test('when nothing can be moved the allowance is not raised, so the Gate blocks the call and asks the user', async () => {
+  const gate = new BudgetGate(new MemoryGateStore(new MemoryEventLog()));
+  await gate.setBudget(P, { projectCap: usd(0.05), monthlyCap: usd(0.05) });
+  const google = transport('## Goal\nx', 'gemini-3.5-flash-lite');
+  const negotiator = Negotiator.fromPlan(usd(0.05), [{ phase: 'spec', expected: usd(0.0001) }, { phase: 'build', expected: usd(0.0001) }]);
+  const caller = new RelayCaller({
+    adapters: { google: new ClaudeAdapter(gate, registry, google.t, 'google') },
+    registry, negotiator, onDecision: async () => {},
+  });
+  const before = negotiator.phases.get('spec')!.allowance;
+  await assert.rejects(caller.call(call('relay:spec', 'google/gemini-3.5-flash-lite', 'tiny', 30_000)), BudgetBlockedError);
+  assert.equal(negotiator.phases.get('spec')!.allowance, before, 'escalation does not quietly raise the allowance');
+  assert.equal(google.sent.length, 0, 'nothing was sent to the provider');
+  assert.equal((await gate.pendingApprovals(P)).length, 1, 'the owner is asked');
+});
