@@ -29,19 +29,19 @@
       "id": 4,
       "text": "Demo seed: account + 1 finished project + 1 fresh idea ready to plan",
       "tier": "must",
-      "status": "open"
+      "status": "done"
     },
     {
       "id": 5,
       "text": "Demo script (90s) + fallback screen recording",
       "tier": "must",
-      "status": "open"
+      "status": "done"
     },
     {
       "id": 6,
       "text": "Pitch: problem, demo, how, impact + Q&A sheet",
       "tier": "must",
-      "status": "open"
+      "status": "done"
     },
     {
       "id": 7,
