@@ -52,6 +52,8 @@ export class RelayCaller implements ModelCaller {
   private readonly registry: PricingRegistry;
   private readonly negotiator: Negotiator;
   private readonly onDecision: (d: Decision) => Promise<void>;
+  /** Tokens each phase has read and written in this process, for the timeline. */
+  private readonly used = new Map<Phase, { input: number; output: number; calls: number }>();
 
   constructor(opts: {
     adapters: Partial<Record<string, ClaudeAdapter>>;
@@ -93,7 +95,15 @@ export class RelayCaller implements ModelCaller {
       throw err;
     }
     this.negotiator.spend(phase, priceMessage(msg, price, this.registry, price.provider).cost);
+    const t = tokensOf(msg);
+    const u = this.used.get(phase) ?? { input: 0, output: 0, calls: 0 };
+    this.used.set(phase, { input: u.input + t.input, output: u.output + t.output, calls: u.calls + 1 });
     return msg;
+  }
+
+  /** What a phase has used so far: input and output tokens and the number of calls. */
+  tokensFor(phase: Phase): { input: number; output: number; calls: number } {
+    return { ...(this.used.get(phase) ?? { input: 0, output: 0, calls: 0 }) };
   }
 }
 

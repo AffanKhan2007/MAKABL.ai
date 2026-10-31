@@ -90,16 +90,21 @@ interface ModeSetup {
   acceptance(slug: string, criteria: string[]): string[];
 }
 
+/** The transport for a vendor's API. Provider keys stay in the server process. */
+export function transportFor(provider: string): ClaudeTransport {
+  return provider === 'google'
+    ? geminiTransport(fetchPost(process.env.GEMINI_API_KEY ?? ''))
+    : provider === 'openai'
+      ? openAiTransport(openAiEndpointFrom(process.env)!)
+      : provider === 'qwen'
+        ? openAiTransport(qwenEndpointFrom(process.env)!)
+        : sdkTransport(new Anthropic());
+}
+
 function liveSetup(provider: string): ModeSetup {
   return {
     // Provider keys stay in the server process and are never passed to the workspace.
-    transport: provider === 'google'
-      ? geminiTransport(fetchPost(process.env.GEMINI_API_KEY ?? ''))
-      : provider === 'openai'
-        ? openAiTransport(openAiEndpointFrom(process.env)!)
-        : provider === 'qwen'
-          ? openAiTransport(qwenEndpointFrom(process.env)!)
-          : sdkTransport(new Anthropic()),
+    transport: transportFor(provider),
     runs: new PgRunLog(db()),
     checksFor: () => LIVE_CHECKS,
     systemPrompt: `${BUILDER_SYSTEM_PROMPT}\n\n${TEMPLATE_GUIDE}`,
@@ -228,7 +233,7 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
     const d = negotiator.finish(phase);
     if (d) await onDecision(d);
     await once(`finished:${phase}`, 'relay_phase_finished', null, {
-      phase, model, spent: negotiator.phases.get(phase)?.spent ?? 0, ...extra,
+      phase, model, spent: negotiator.phases.get(phase)?.spent ?? 0, tokens: caller.tokensFor(phase), ...extra,
     });
   };
   const pause = () => setProjectState(projectId, 'paused', userId);
@@ -247,7 +252,7 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
       }));
       const specBrief = textOf(specMsg);
       const specTokens = tokensOf(specMsg);
-      await finishPhase('spec', specModel, { tokens: specTokens });
+      await finishPhase('spec', specModel);
 
       // Architect: works from the spec brief, never the spec phase's transcript.
       const archModel = await modelFor('architect');
@@ -263,7 +268,7 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
       }));
       architectBrief = textOf(archMsg);
       const archTokens = tokensOf(archMsg);
-      await finishPhase('architect', archModel, { tokens: archTokens });
+      await finishPhase('architect', archModel);
       await once('handoff:architect', 'relay_handoff', null, {
         from: 'architect', to: 'build', fromModel: archModel, toModel: buildModel, brief: architectBrief.slice(0, 6_000),
         briefTokens: archTokens.output,

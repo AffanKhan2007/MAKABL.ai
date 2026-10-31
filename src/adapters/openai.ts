@@ -1,5 +1,6 @@
 import type Anthropic from '@anthropic-ai/sdk';
 import { NotChargedError } from '../gate/budget-gate.ts';
+import { providerFetch } from './net.ts';
 import { ProviderLimitError, type ClaudeMessage, type ClaudeTransport } from './claude.ts';
 
 // OpenAI-compatible transport: Chat Completions on OpenAI directly, or on OpenRouter, which
@@ -88,7 +89,7 @@ const estimateTokens = (params: CountParams) =>
 
 async function post(endpoint: OpenAiEndpoint, body: unknown): Promise<Record<string, any>> {
   for (let waited = 0; ; waited++) {
-    const response = await fetch(endpoint.url, {
+    const response = await providerFetch(endpoint.label, endpoint.url, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${endpoint.apiKey}` },
       body: JSON.stringify(body),

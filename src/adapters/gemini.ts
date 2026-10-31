@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type Anthropic from '@anthropic-ai/sdk';
 import { NotChargedError } from '../gate/budget-gate.ts';
 import { ProviderLimitError, type ClaudeMessage, type ClaudeTransport } from './claude.ts';
+import { providerFetch } from './net.ts';
 
 // Gemini transport: lets the Claude adapter, and so the Budget Gate, drive a Gemini model.
 // The build loop speaks the Messages API shape; this translates each request to the
@@ -58,7 +59,7 @@ export function retryAfterSeconds(body: string): number | null {
 export function fetchPost(apiKey: string): GeminiPost {
   return async (path, body) => {
     for (let waited = 0; ; waited++) {
-      const res = await fetch(`${API}/${path}`, {
+      const res = await providerFetch('Gemini', `${API}/${path}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
         body: JSON.stringify(body),

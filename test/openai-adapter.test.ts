@@ -119,3 +119,33 @@ test('DASHSCOPE_API_KEY enables Qwen models', () => {
   assert.equal(liveModeStatus({ DASHSCOPE_API_KEY: 'k', MAKABL_ALLOW_UNSANDBOXED_BUILDS: '1' }, 'qwen').available, true);
   assert.match(liveModeStatus({}, 'qwen').missing[0]!, /DASHSCOPE_API_KEY/);
 });
+
+test('a provider that cannot be reached books nothing; the request was never sent', async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = (async () => { throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ENOTFOUND' } }); }) as typeof fetch;
+  try {
+    const gate = new BudgetGate(new MemoryGateStore(new MemoryEventLog()));
+    await gate.setBudget('p', { projectCap: usd(5), monthlyCap: usd(5) });
+    const adapter = new ClaudeAdapter(gate, registry, openAiTransport(qwenCloud('k')), 'qwen');
+    await assert.rejects(adapter.call({
+      projectId: 'p', taskId: 't', taskCeiling: usd(5), idempotencyKey: 'kn', description: 'd',
+      model: 'qwen/qwen3.8-flash', maxTokens: 100, messages: [{ role: 'user', content: 'x' }],
+    }), /could not be reached \(ENOTFOUND\); nothing was sent/);
+    assert.equal(await gate.spent('p'), 0);
+  } finally { globalThis.fetch = original; }
+});
+
+test('a failure that may have happened after sending is still booked at its worst case', async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = (async () => { throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNRESET' } }); }) as typeof fetch;
+  try {
+    const gate = new BudgetGate(new MemoryGateStore(new MemoryEventLog()));
+    await gate.setBudget('p', { projectCap: usd(5), monthlyCap: usd(5) });
+    const adapter = new ClaudeAdapter(gate, registry, openAiTransport(qwenCloud('k')), 'qwen');
+    await assert.rejects(adapter.call({
+      projectId: 'p', taskId: 't', taskCeiling: usd(5), idempotencyKey: 'kr', description: 'd',
+      model: 'qwen/qwen3.8-flash', maxTokens: 100, messages: [{ role: 'user', content: 'x' }],
+    }));
+    assert.ok(await gate.spent('p') > 0);
+  } finally { globalThis.fetch = original; }
+});

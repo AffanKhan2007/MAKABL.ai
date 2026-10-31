@@ -11,6 +11,7 @@ import { RETRY_CHOICES, whatIf } from '../../../src/server/what-if.ts';
 import { WhatIf } from './what-if.tsx';
 import { EasyOverview } from './easy.tsx';
 import { RelayTimeline } from './relay-timeline.tsx';
+import { rendersOf } from '../../../src/server/design.ts';
 import { PgEventLog } from '../../../src/db/pg-event-log.ts';
 import { db } from '../../../src/server/db.ts';
 import { getMode } from '../../../src/server/mode.ts';
@@ -158,6 +159,9 @@ export default async function ProjectPage({
   const report = await loadReport(project, scope);
   const projectEvents = await new PgEventLog(db(), scope).list(id);
   const relay = project.spec.relay;
+  const mockups = rendersOf(projectEvents);
+  const mockupCost = mockups.reduce((t, r) => t + r.cost, 0);
+  const mockupTokens = mockups.reduce((t, r) => t + r.tokens.input + r.tokens.output, 0);
   const showRelay = !!relay || projectEvents.some((e) => e.type === 'relay_phase_started');
   const plannedModels = {
     spec: relay?.spec ?? project.spec.buildModel,
@@ -328,6 +332,22 @@ export default async function ProjectPage({
           <p className="muted small" style={{ margin: 0 }}>Approve the updated plan below to build the changes.</p>
         </section>
       )}
+
+      <section className="card row spread design-link">
+        <div>
+          <span className="eyebrow">{easy ? 'Before we build' : 'Design mockup'}</span>
+          <h2 style={{ margin: '4px 0 2px' }}>{easy ? 'See what it will look like' : 'Wireframe'}</h2>
+          <p className="muted small" style={{ margin: 0 }}>
+            {mockups.length
+              ? `${mockups.length} version${mockups.length === 1 ? '' : 's'} so far · ${mockupTokens.toLocaleString('en-US')} tokens · ${mockupCost > 0 && mockupCost < 10_000 ? `$${(mockupCost / 1_000_000).toFixed(4)}` : money(mockupCost)}`
+              : budget ? (easy ? 'A quick sketch of the main screens, for a fraction of a cent.' : 'Low-fidelity mockup of the main screens; one cheap call per version, on the cap.')
+                : (easy ? 'Available once your limit is set.' : 'Available once the plan is approved.')}
+          </p>
+        </div>
+        <Link className={`button${mockups.length ? ' secondary' : ''}`} href={`/projects/${id}/design`}>
+          {mockups.length ? (easy ? 'See the sketches' : 'Open mockups') : (easy ? 'Show me' : 'Draw a mockup')}
+        </Link>
+      </section>
 
       {showRelay && (
         <RelayTimeline events={projectEvents} ledger={ledger} planned={plannedModels} estimate={phaseEstimate}
