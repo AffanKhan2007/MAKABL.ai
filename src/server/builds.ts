@@ -21,9 +21,10 @@ import type { ActivityEvent, EventType } from '../events/event-store.ts';
 import { BudgetBlockedError, BudgetGate } from '../gate/budget-gate.ts';
 import { Negotiator, type Decision } from '../relay/negotiator.ts';
 import {
-  approxTokens, ARCHITECT_SYSTEM, architectPrompt, phaseCall, RELAY_TASK, RelayCaller, REVIEW_SYSTEM, reviewPrompt,
-  reviewTaskId, SPEC_SYSTEM, specPrompt, textOf, tokensOf, verdictOf,
+  approxTokens, ARCHITECT_SYSTEM, architectPrompt, phaseCall, phaseOfTask, RELAY_TASK, RelayCaller, REVIEW_SYSTEM,
+  reviewPrompt, reviewTaskId, SPEC_SYSTEM, specPrompt, textOf, tokensOf, verdictOf,
 } from '../relay/relay.ts';
+import { FallbackCaller } from '../relay/fallback.ts';
 import { db } from './db.ts';
 import { liveModeStatus } from './live-mode.ts';
 import { liveBlocker, planFor, registry } from './plan.ts';
@@ -211,7 +212,12 @@ async function runBuild(projectId: string, userId: string): Promise<void> {
   let decisionNo = 0;
   const onDecision = (d: Decision) =>
     once(`negotiation:${decisionNo++}`, 'negotiation', null, { ...d, after: negotiator.snapshot() });
-  const caller = new RelayCaller({ adapters, registry, negotiator, onDecision });
+  // A Gemini model whose free quota runs out mid-build hands its calls to the next one.
+  const caller = new FallbackCaller(new RelayCaller({ adapters, registry, negotiator, onDecision }), (s) =>
+    events.append({
+      projectId, taskId: null, type: 'relay_substituted',
+      payload: { phase: phaseOfTask(s.taskId), planned: s.from, used: s.to, reason: s.reason },
+    }).then(() => undefined));
 
   const modelFor = async (phase: Exclude<Phase, 'build'>): Promise<string> => {
     const planned = relay![phase];

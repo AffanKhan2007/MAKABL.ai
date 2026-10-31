@@ -83,6 +83,12 @@ export function fetchPost(apiKey: string): GeminiPost {
       }
       // Rejected before any work was done, so nothing was charged.
       if (res.status === 400) throw new NotChargedError(`Gemini API 400: ${message}`);
+      if (res.status === 503) {
+        // Overloaded: one short wait, then hand the call to another model (not charged).
+        if (waited < 1) { await new Promise((r) => setTimeout(r, 5_000)); continue; }
+        const model = /models\/([^:]+)/.exec(path)?.[1] ?? 'model';
+        throw new ProviderLimitError(`Gemini ${model} is overloaded right now (503); trying another model.`);
+      }
       throw new Error(`Gemini API ${res.status}: ${message}`);
     }
   };
@@ -93,6 +99,17 @@ const systemText = (system: MessageParams['system']): string | undefined => {
   if (typeof system === 'string') return system;
   return system.map((b) => b.text).join('\n\n');
 };
+
+/**
+ * Google's documented placeholder for a function call with no signature from this model:
+ * history written by another model, or by a Gemini model the build switched away from.
+ */
+export const SKIP_SIGNATURE = 'skip_thought_signature_validator';
+
+/** The same history with Gemini thought signatures removed, for handing to another model. */
+export function withoutGeminiSignatures<T>(messages: T): T {
+  return JSON.parse(JSON.stringify(messages, (k, v) => (k === 'geminiSignature' ? undefined : v))) as T;
+}
 
 /** Messages-API history to Gemini contents. Thinking blocks are Claude-only and dropped. */
 export function toContents(messages: MessageParams['messages']): GeminiContent[] {
@@ -109,7 +126,7 @@ export function toContents(messages: MessageParams['messages']): GeminiContent[]
         toolNames.set(String(raw.id), String(raw.name));
         parts.push({
           functionCall: { name: String(raw.name), args: (raw.input ?? {}) as Record<string, unknown> },
-          ...(raw.geminiSignature ? { thoughtSignature: raw.geminiSignature } : {}),
+          thoughtSignature: raw.geminiSignature ?? SKIP_SIGNATURE,
         });
       } else if (raw.type === 'tool_result') {
         const content = typeof raw.content === 'string'
